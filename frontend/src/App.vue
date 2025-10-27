@@ -1,10 +1,25 @@
 <template>
   <nav>
     <router-link to="/">Home</router-link> |
-    <router-link to="/about">About</router-link>
+    <router-link to="/about">About</router-link> |
+    <router-link to="/qrscanner">QrScanner</router-link>
   </nav>
   <router-view/>
+
+  <div id="app">
+    <QrScanner />
+  </div>
+
 </template>
+
+<script>
+import QrScanner from './components/QrScanner.vue'
+
+export default {
+  name: 'App',
+  components: { QrScanner }
+}
+</script>
 
 <style>
 #app {
