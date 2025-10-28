@@ -1,4 +1,7 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router';
+import Home from '../components/Home.vue';
+import ClockIn from '../components/ClockIn.vue';
+import BreakManagement from '../components/BreakManagement.vue';
 import HomeView from '../views/HomeView.vue'
 import QrScanner from '@/components/QrScanner.vue'
 import Clock from '../views/Clock.vue'
@@ -10,6 +13,10 @@ const routes = [
     name: 'home',
     component: HomeView
   },
+  //Bheka
+  { path: '/', component: Home },
+  { path: '/break', component: BreakManagement },
+  { path: '/clockin', component: ClockIn },
   {
     path: '/about',
     name: 'about',
@@ -36,8 +43,8 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHashHistory(),
-  routes
-})
+  history: createWebHistory(),
+  routes,
+});
 
-export default router
+export default router;
