@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import QrScanner from '@/components/QrScanner.vue'
+import Clock from '../views/Clock.vue'
 
 const routes = [
   {
@@ -20,6 +21,11 @@ const routes = [
     path: '/qrscanner',
     name: 'qrscanner',
     component: QrScanner
+  },
+  {
+    path: '/clockin-out',
+    name: 'clock',
+    component: Clock
   }
 ]
 

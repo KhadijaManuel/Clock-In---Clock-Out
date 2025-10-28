@@ -2,22 +2,20 @@
   <nav>
     <router-link to="/">Home</router-link> |
     <router-link to="/about">About</router-link> |
-    <router-link to="/qrscanner">QrScanner</router-link>
+    <router-link to="/qrscanner">QrScanner</router-link> |
+    <router-link to="/clockin-out">Clock</router-link>
   </nav>
   <router-view/>
-
-  <div id="app">
-    <QrScanner />
-  </div>
 
 </template>
 
 <script>
 import QrScanner from './components/QrScanner.vue'
+import Clock from '@/views/Clock.vue'
 
 export default {
   name: 'App',
-  components: { QrScanner }
+  components: { QrScanner, Clock }
 }
 </script>
 
