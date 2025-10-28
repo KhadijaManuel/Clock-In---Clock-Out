@@ -1,0 +1,10 @@
+import('../services/sheetService.js').then(()=>console.log('sheetService ok')).catch(e=>console.error('sheetService err',e.message));
+import('../services/persistenceService.js').then(()=>console.log('persistenceService ok')).catch(e=>console.error('persistenceService err',e.message));
+import('../services/attendanceService.js').then(()=>console.log('attendanceService ok')).catch(e=>console.error('attendanceService err',e.message));
+import('../config/dbPool.js').then(()=>console.log('dbPool ok')).catch(e=>console.error('dbPool err',e.message));
+import('../controllers/attendanceController.js').then(()=>console.log('attendanceController ok')).catch(e=>console.error('attendanceController err',e.message));
+import('../controllers/adminController.js').then(()=>console.log('adminController ok')).catch(e=>console.error('adminController err',e.message));
+import('../routes/attendanceRoutes.js').then(()=>console.log('attendanceRoutes ok')).catch(e=>console.error('attendanceRoutes err',e.message));
+import('../routes/adminRoutes.js').then(()=>console.log('adminRoutes ok')).catch(e=>console.error('adminRoutes err',e.message));
+import('../models/employeeData.js').then(()=>console.log('employeeData ok')).catch(e=>console.error('employeeData err',e.message));
+import('../models/attendanceData.js').then(()=>console.log('attendanceData ok')).catch(e=>console.error('attendanceData err',e.message));
