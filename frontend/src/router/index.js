@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import QrScanner from '@/components/QrScanner.vue'
 import Clock from '../views/Clock.vue'
+import UpdatedQrCode from '@/components/updatedQrcode.vue'
 
 const routes = [
   {
@@ -26,6 +27,11 @@ const routes = [
     path: '/clockin-out',
     name: 'clock',
     component: Clock
+  },
+  {
+    path: '/updatedQrcode',
+    name: 'updatedQrcode',
+    component: UpdatedQrCode
   }
 ]
 

@@ -1,4 +1,4 @@
-<template>
+ <template>
   <div class="scanner-container">
     <h2>Employee QR Clock System</h2>
     <p class="instruction">Please scan your QR code to clock in or out</p>

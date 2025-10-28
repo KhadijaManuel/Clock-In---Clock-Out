@@ -3,7 +3,8 @@
     <router-link to="/">Home</router-link> |
     <router-link to="/about">About</router-link> |
     <router-link to="/qrscanner">QrScanner</router-link> |
-    <router-link to="/clockin-out">Clock</router-link>
+    <router-link to="/clockin-out">Clock</router-link> |
+    <router-link to="/updatedQrcode">updatedQrcode</router-link> 
   </nav>
   <router-view/>
 
