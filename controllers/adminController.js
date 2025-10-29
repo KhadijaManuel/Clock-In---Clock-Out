@@ -1,11 +1,11 @@
 import { appendLog } from "../services/sheetService.js";
 
 // Admin controller: lightweight endpoints to help verify integrations.
-// NOTE: These endpoints are intended for development and debugging only.
-// Do NOT expose them in production without authentication.
+// These endpoints are intended for development and debugging only.
+// Must NOT be exposed in production without authentication.
 
 export async function sheetsTest(req, res) {
-  // If ADMIN_TEST_KEY is configured, require the client to present it via
+  // This can be of use if ADMIN_TEST_KEY is configured, requires the client to present it via
   // the 'x-admin-key' header. This avoids leaving an unprotected admin
   // endpoint exposed (safe default for development).
   const adminKey = process.env.ADMIN_TEST_KEY;
@@ -16,7 +16,7 @@ export async function sheetsTest(req, res) {
     }
   }
 
-  // write a single test row to the configured spreadsheet so the operator
+  // I have to write a single test row to the configured spreadsheet so the operator
   // can verify credentials and permissions. The test payload is minimal
   // and safe; the caller can inspect the spreadsheet and remove the row.
   try {

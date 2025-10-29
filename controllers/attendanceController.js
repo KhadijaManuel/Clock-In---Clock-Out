@@ -1,37 +1,20 @@
-// Employee clocks in
-// export const clockIn = (req, res) => {
-//   res.status(200).json({
-//     message: "Clock-in feature under development",
-//   });
-// };
-
-// // Employee clocks out
-// export const clockOut = (req, res) => {
-//   res.status(200).json({
-//     message: "Clock-out feature under development",
-//   });
-// };
-
-
-
-
-
 import { getEmployeeByQrOrId } from "../services/attendanceService.js";
 import { recordLog } from "../services/persistenceService.js";
 import { hasClockInToday, appendLog as appendToSheet } from "../services/sheetService.js";
 import { attendanceLogs } from "../models/attendanceData.js";
 
 // simulateScan: local helper that returns a qrCode from the request body
-// or a sensible default. Keep this isolated so replacing with a real QR
-// scanner in the future is simple.
-const simulateScan = (req) => req.body.qrCode || "QR_EMP001";
+// or null when none is provided. We avoid returning a default QR token here
+// because that causes the service layer to attempt qrCode-based DB queries
+// even when the caller supplied a numeric employeeId (common in MySQL setups).
+const simulateScan = (req) => req.body && req.body.qrCode ? req.body.qrCode : null;
 
 // clockIn: controller endpoint for employee clock-in.
 // Steps:
-// 1. obtain qrCode or employeeId from the request
-// 2. look up the employee via the attendanceService adapter
-// 3. prevent duplicate clock-ins on the same day using the in-memory store
-// 4. create a log object and delegate persistence to persistenceService.recordLog
+// 1. obtains qrCode or employeeId from the request
+// 2. looks up the employee via the attendanceService adapter
+// 3. prevents duplicate clock-ins on the same day using the in-memory store
+// 4. creates a log object and delegate persistence to persistenceService.recordLog
 // Note: recordLog is resilient and will not cause the HTTP request to fail
 // if downstream systems (DB/Sheets) are temporarily unavailable.
 export const clockIn = async (req, res) => {
@@ -40,6 +23,14 @@ export const clockIn = async (req, res) => {
 
   if (!qrCode && !employeeId) {
     return res.status(400).json({ message: "QR Code or Employee ID is required" });
+  }
+
+  // Validates employeeId if provided
+  if (employeeId) {
+    const numericId = parseInt(employeeId, 10);
+    if (isNaN(numericId) || numericId <= 0) {
+      return res.status(400).json({ message: "Employee ID must be a positive number" });
+    }
   }
 
   const employee = await getEmployeeByQrOrId({ qrCode, id: employeeId });
@@ -54,24 +45,24 @@ export const clockIn = async (req, res) => {
   const SHEETS_DO_APPEND = String(process.env.SHEETS_DO_APPEND || "false").toLowerCase() === "true";
 
   const log = {
-    employeeId: employee.id,
+    employeeId: parseInt(employee.id || employee.employee_id, 10), // Support both id and employee_id
     name: employee.name,
     action: "Clock In",
     timestamp: new Date().toISOString(),
   };
 
   if (SHEETS_ONLY) {
-    // Check spreadsheet for existing clock-in
+    // Checks spreadsheet for existing clock-in
     try {
       const exists = await hasClockInToday(employee.id, 'Clock In');
       if (exists) return res.status(400).json({ message: 'Already clocked in today' });
     } catch (err) {
-      // Propagate meaningful errors to the operator for configuration issues
+      // Propagates meaningful errors to the operator for configuration issues
       return res.status(500).json({ message: 'Sheets check failed', error: String(err?.message || err) });
     }
 
     if (!SHEETS_DO_APPEND) {
-      // Dry-run mode: show what would happen but do not modify the spreadsheet.
+      // Dry-run mode: shows what would happen but does not modify the spreadsheet.
       return res.json({ message: 'Dry-run: Sheets append skipped (SHEETS_DO_APPEND not enabled)', log });
     }
 
@@ -126,7 +117,7 @@ export const clockOut = async (req, res) => {
   if (!hasClockedInToday) return res.status(400).json({ message: "Cannot clock out before clocking in" });
 
   const log = {
-    employeeId: employee.id,
+    employeeId: parseInt(employee.id || employee.employee_id, 10), // Support both id and employee_id
     name: employee.name,
     action: "Clock Out",
     timestamp: new Date().toISOString(),

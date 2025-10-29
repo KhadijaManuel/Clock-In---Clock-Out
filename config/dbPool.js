@@ -22,7 +22,7 @@ export async function getPool() {
     const DB_USER = (process.env.DB_USER || 'root').toString().trim();
     // support DB_PASS or DB_PASSWORD env var names
     const DB_PASS = (process.env.DB_PASS ?? process.env.DB_PASSWORD ?? '').toString();
-    const DB_NAME = (process.env.DB_NAME || 'attendance').toString().trim();
+  const DB_NAME = (process.env.DB_NAME || 'tracker_db').toString().trim();
 
     pool = mysql.createPool({
       host: DB_HOST,
@@ -34,11 +34,6 @@ export async function getPool() {
       connectionLimit: 10,
     });
 
-    // Optionally do a lightweight probe query to ensure the DB is reachable.
-    // We avoid failing the import if probe fails - calling code will handle a
-    // null pool. However, if you want strict startup failure on DB errors
-    // uncomment the probe below and throw on error.
-    // await pool.query('SELECT 1');
 
     return pool;
   } catch (err) {

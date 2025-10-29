@@ -1,5 +1,4 @@
-// express logic
-console.log("Testing if Digital Attendance Backend is running...");
+console.log("Digital Attendance Backend is running...");
 
 import express from "express";
 import cors from "cors"; //
@@ -12,16 +11,18 @@ dotenv.config();
 
 const app = express();
 
-// Enable CORS for all origins
+// Enables CORS for all origins
 app.use(cors());
 
-// Parse JSON request bodies
+// Parses JSON request bodies
 app.use(express.json());
+
+// Parses JSON request bodies
 
 // Attendance Routes
 app.use("/api/attendance", attendanceRoutes);
 
-// Admin debug routes (development only)
+// Admin debug routes (just for development only)
 app.use('/admin', adminRoutes);
 
 // Root route (just for testing)

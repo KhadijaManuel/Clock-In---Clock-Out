@@ -1,9 +1,14 @@
 // Attendance service adapter
 // This module provides a small adapter layer between controllers and the
-// data source. Contract:
-// - Inputs: { qrCode?, id? } for lookups
-// - Outputs: employee object or null
-// - Error handling: on transient DB errors we fall back to the JSON model
+// data source. How it works:
+//  Data sources: MySQL (preferred) and JSON file (fallback)
+//  Main functions:
+//   - getEmployeeByQrOrId: look up employee by qrCode or numeric ID
+//   - listEmployees: return list of all employees
+// - Behavior: 
+//   - Prefers MySQL when available (USE_MYSQL=true and connection OK)
+//   - Falls back to JSON model on errors or when MySQL is disabled 
+// - Input validation: ensures employeeId is numeric when querying by ID
 // The implementation prefers MySQL when `USE_MYSQL=true` (see config/dbPool.js)
 // but keeps a JSON fallback so development doesn't require a running DB.
 // The MySQL client is dynamically imported by the pool helper so `mysql2`
@@ -12,22 +17,17 @@
 import { findEmployee, getAllEmployees } from "../models/employeeData.js";
 import { getPool } from "../config/dbPool.js";
 
-// Find employee by qrCode or id. Returns the employee object or null.
+// Gets employee by qrCode or numeric ID
 export async function getEmployeeByQrOrId({ qrCode, id }) {
-  // getPool() returns a mysql2/promise pool when USE_MYSQL=true and the
-  // connection test succeeded, otherwise it returns null and we use the JSON
-  // fallback. This keeps the controller code simple.
+  // Prefer MySQL when available
   const p = await getPool();
   if (!p) {
     // JSON fallback (reads data/employees.json)
     return findEmployee({ qrCode, id });
   }
 
-  // Use MySQL table `employees` with at least columns: id, name, department, qrCode
   try {
-    // Note: the SQL schema in some DB dumps uses `employee_id` as the
-    // numeric primary key and `id` as a national/id string. To support
-    // both styles we handle two cases:
+   
     // - If caller passed a qrCode, attempt to match a column named qrCode
     //   (legacy JSON mode) or fall back to the `id` column if present.
     // - If caller passed an id that looks numeric, query `employee_id`.
@@ -37,7 +37,7 @@ export async function getEmployeeByQrOrId({ qrCode, id }) {
       let [rows] = await p.query("SELECT * FROM employees WHERE qrCode = ? LIMIT 1", [qrCode]);
       if (rows && rows.length) return normalizeRow(rows[0]);
 
-      // fall back to `id` column match (some schemas store a token/national id)
+      // fall back to `id` column match
       [rows] = await p.query("SELECT * FROM employees WHERE id = ? LIMIT 1", [qrCode]);
       if (rows && rows.length) return normalizeRow(rows[0]);
     }
@@ -57,15 +57,14 @@ export async function getEmployeeByQrOrId({ qrCode, id }) {
     return null;
   } catch (err) {
     // On error, fall back to JSON model rather than crashing the app.
-    // This is a pragmatic choice: lookups remain available even if DB is
-    // temporarily unavailable. Log the error for observability.
+    // This makes lookups remain available even if DB is temporarily unavailable. Log the error for observability.
     console.error("attendanceService: MySQL query failed, falling back to JSON model:", err?.message || err);
     return findEmployee({ qrCode, id });
   }
 }
 
-// Return list of employees (async). Similar fallback semantics apply: prefer
-// MySQL when available, otherwise return the JSON-backed list.
+// Return list of employees 
+// MySQL when available, otherwise returns the JSON-backed list.
 export async function listEmployees() {
   const p = await getPool();
   if (!p) return getAllEmployees();
@@ -93,4 +92,4 @@ function normalizeRow(row) {
   return { ...row, id, employee_id: row.employee_id, name, qrCode };
 }
 
-// Future: export a `closePool()` helper to gracefully shut down the pool if needed.
+// Future plans: export a `closePool()` helper to gracefully shut down the pool if needed.

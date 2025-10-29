@@ -1,13 +1,20 @@
 // persistenceService: durable-ish recording of attendance logs.
 // Responsibilities:
-// - always push to the in-memory `attendanceLogs` for fast access
+// - pushes to the in-memory `attendanceLogs` for fast access
 // - optionally insert a row into MySQL (if USE_MYSQL=true and pool available)
-// - optionally append to Google Sheets; if Sheets append fails we enqueue
+// - Appends to Google Sheets when granted permission by Liso; if Sheets append fails we enqueue
 //   the write and retry asynchronously with exponential backoff. Exhausted
 //   failures are persisted to `data/sheet_failures.json` for manual inspection.
 
 import { attendanceLogs } from "../models/attendanceData.js";
 import { appendLog as appendToSheet } from "./sheetService.js";
+
+function calculateStatus(clockOutTime) {
+  const [hours, minutes] = clockOutTime.split(':').map(Number);
+  if (hours < 17) return 'Early';
+  if (hours === 17 && minutes <= 5) return 'OnTime';
+  return 'Late';
+}
 import { getPool } from "../config/dbPool.js";
 import { writeFile } from "fs/promises";
 import path from "path";
@@ -15,8 +22,7 @@ import path from "path";
 // Path where exhausted sheet failures are persisted for admins.
 const FAILURE_STORE = path.resolve(new URL(import.meta.url).pathname, "..", "data", "sheet_failures.json");
 
-// In-memory retry queue for failed sheet writes. Each item shape:
-// { log, retries: number, backoff: ms }
+// In-memory retry queue for failed sheet writes.
 const sheetQueue = [];
 let sheetWorkerStarted = false;
 
@@ -34,7 +40,7 @@ async function persistFailures() {
 
 // Background worker that processes the sheetQueue with a simple exponential
 // backoff strategy. This worker is intentionally simple (in-memory). For
-// production reliability replace with a durable queue (Redis/Bull, RabbitMQ, etc.).
+// production reliability , this can be replaced with a durable queue (Redis/Bull, RabbitMQ, etc.).
 function startSheetWorker() {
   if (sheetWorkerStarted) return;
   sheetWorkerStarted = true;
@@ -46,7 +52,7 @@ function startSheetWorker() {
     if (sheetQueue.length === 0) return;
     const item = sheetQueue.shift();
     try {
-      // attempt the append; appendToSheet itself will no-op if sheets are disabled
+      // attempts the append; appendToSheet itself will no-op if sheets are disabled
       await appendToSheet(item.log);
       // success: nothing more to do for this item
     } catch (err) {
@@ -65,20 +71,45 @@ function startSheetWorker() {
   }, 5000);
 }
 
-// recordLog: main exported function used by controllers. The function keeps
+// recordLog: main exported function used by controllers. This function keeps
 // the operation resilient: DB and Sheets failures are logged and handled
 // asynchronously so HTTP responses aren't blocked by external systems.
 export async function recordLog(log) {
-  // Try to write to MySQL when available. We prefer the DB as the source
-  // of truth for deduplication. If the pool exists, attempt an INSERT IGNORE
-  // so we can detect duplicates (affectedRows === 0).
+
   const p = await getPool();
   if (p) {
     try {
-      const [result] = await p.query(
-        "INSERT IGNORE INTO attendance_logs (employeeId, name, action, timestamp) VALUES (?, ?, ?, ?)",
-        [log.employeeId, log.name, log.action, log.timestamp]
-      );
+      // Ensures employeeId is numeric
+      const employeeId = parseInt(log.employeeId, 10);
+      if (isNaN(employeeId)) {
+        throw new Error('Invalid employee ID: must be a number');
+      }
+
+      // Formats timestamp for database
+      const timestamp = new Date(log.timestamp);
+      const timeStr = timestamp.toTimeString().split(' ')[0];
+      const dateStr = timestamp.toISOString().split('T')[0];
+      
+      // Determines if this is clock in or clock out
+      const isClockIn = log.action.toLowerCase().includes('in');
+
+      let result;
+      if (isClockIn) {
+        // Calculates status for clock-in (Early/OnTime/Late) and upsert the row
+        const status = calculateStatus(timeStr);
+        [result] = await p.query(
+          "INSERT INTO record_backups (employee_id, clockin_time, type, date, status) VALUES (?, ?, 'Work', ?, ?) ON DUPLICATE KEY UPDATE clockin_time = VALUES(clockin_time), date = VALUES(date), clockout_time = NULL, status = VALUES(status)",
+          [employeeId, timeStr, dateStr, status]
+        );
+        // proceeds with result handling below
+      } else {
+        // Clock-out: set clockout_time and update status based on clock-out if desired
+        // We intentionally do not overwrite the clock-in-derived status here.
+        [result] = await p.query(
+          "UPDATE record_backups SET clockout_time = ? WHERE employee_id = ?",
+          [timeStr, employeeId]
+        );
+      }
 
       // If affectedRows is 0 the row was ignored due to unique constraint
       if (result && typeof result.affectedRows === 'number' && result.affectedRows === 0) {
@@ -113,7 +144,7 @@ export async function recordLog(log) {
     }
   }
 
-  // No DB configured: behave as before (in-memory + Sheets)
+  // If no DB is configured: behave as before (in-memory + Sheets)
   attendanceLogs.push(log);
   try {
     await appendToSheet(log);

@@ -1,15 +1,9 @@
 // sheetService: a thin wrapper to append attendance logs to Google Sheets.
-//
-// Notes on design and usage:
-// - Safe to include in development: when USE_SHEETS is not "true" this module
-//   becomes a no-op and will not throw. This avoids requiring Google creds in
-//   dev environments.
-// - Credentials can be supplied via the env var `GOOGLE_SERVICE_ACCOUNT_JSON`
-//   (the full JSON string) or by pointing `GOOGLE_APPLICATION_CREDENTIALS`
-//   to a service account JSON file on disk.
-// - The spreadsheet id is taken from `GOOGLE_SHEETS_SPREADSHEET_ID` or
-//   `SHEET_ID`. The default target range is `Sheet1!A:D` but can be changed
-//   via `GOOGLE_SHEETS_RANGE`.
+// Responsibilities:
+// - Provides an appendLog(log) function that appends a log to the configured
+//   Google Sheets spreadsheet and range.
+// - Provides a hasClockInToday(employeeId) function that checks whether the
+//   given employee has a "Clock In" entry for today in the sheet.
 
 import { readFile } from "fs/promises";
 
@@ -20,7 +14,7 @@ const SHEET_RANGE = process.env.GOOGLE_SHEETS_RANGE || "Sheet1!A:D"; // default 
 // Build an authorized JWT client for the Google Sheets API. Returns { jwt, google }
 // to allow lazy-importing the googleapis module only when needed.
 async function getAuthClient() {
-  // attempt to obtain service account JSON from env or file
+  // attempts to obtain service account JSON from env or file
   let keyJson = null;
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
     try {
