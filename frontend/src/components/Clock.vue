@@ -1,393 +1,414 @@
 <template>
-    <div class="clockin-out">
-        <div class="timer">
-          <h5>Hours Worked</h5>
-          <h2> {{ formattedTime }}</h2>
-        </div>
-        <div class="clock-container">
-            <div class="clock-in card">
-                <h2>You are currently logged out</h2>
-                <button @click="handleClockIn">➡Clock In</button>
-                <h5 v-if="clockInTime">You are currently Clocked In</h5>
-                <p v-if="clockInTime" class="clock-label">
-                  🕕Clock-In Time : <strong> {{ clockInTime }}</strong>
-                </p>
-                <p v-if="clockInLocation" class="clock-label">
-                  📍Location: <strong>{{ clockInLocation }}</strong>
-                </p>
-            </div>
-            <div class="clock-out card">
-                <h4>Clock Out</h4>
-                <button @click="handleClockOut">Clock Out ➡</button>
-                <h4 v-if="clockOutTime">You are currently Clocked Out</h4>
-                <p v-if="clockOutTime" class="clock-label">
-                  🕕Clock-Out Time : <strong> {{ clockOutTime }}</strong>
-                </p>
-                <p v-if="clockOutLocation" class="clock-label">
-                  📍Location: <strong>{{ clockOutLocation }}</strong>
-                </p>
-                <p v-if="totalTimeWorked" class="worked-time">
-                  Total Time Worked: <strong> {{ totalTimeWorked }}</strong>
-                </p>
-            </div>
-        </div>
+  <div :class="['app-container',theme]">
+    <div class="actions">
+      <button class="theme-toogle" @click="toogleTheme">
+        <span v-if="theme === 'light'">🌙</span>
+        <span v-else>☀</span>
+      </button>
     </div>
+    <main>
+      <h2 class="hours-title">Hours Worked</h2>
+      <h1 class="timer-display">{{ formattedTime }}</h1>
+
+      <div class="cards">
+        <div class="card">
+          <h2>
+            {{ isClockedIn ? 'You are currently Clocked In' : 'You are currently Clocked Out' }}
+          </h2>
+          <button class="clock-btn" @click="handleClockIn" :disabled="isClockedIn">➡ Clock In</button>
+
+          <h4 v-if="clockInTime" class="clock-label">
+            🕕 Clock-In Time: <strong>{{ clockInTime }}</strong>
+          </h4>
+          <h4 v-if="clockInLocation" class="clock-label">
+            📍 Location: <strong>{{ clockInLocation }}</strong>
+          </h4>
+        </div>
+
+        <div class="card">
+          <h2>
+            {{ isClockedIn ? 'You are currently Clocked In' : 'You are currently Clocked Out' }}
+          </h2>
+          <button class="clock-btn" @click="handleClockOut" :disabled="!isClockedIn">Clock Out ➡</button>
+
+          <p v-if="clockOutTime" class="clock-label">
+            🕕 Clock-Out Time: <strong>{{ clockOutTime }}</strong>
+          </p>
+          <p v-if="clockOutLocation" class="clock-label">
+            📍 Location: <strong>{{ clockOutLocation }}</strong>
+          </p>
+          <p v-if="totalTimeWorked" class="worked-time">
+            Total Time Worked: <strong>{{ totalTimeWorked }}</strong>
+          </p>
+        </div>
+      </div>
+      <div class="hours-section">
+        <h3>Hours Worked</h3>
+        <p>Day 20 - 5h</p>
+        <p>Day 30 - 3h</p>
+      </div>
+    </main>
+  </div>
 </template>
 
 <script setup>
-  import { ref, onUnmounted } from 'vue';
+import { ref, onUnmounted, nextTick } from "vue";
 
-  const elapsedTime = ref(0);
-  const timerInterval = ref(null);
-  const formattedTime = ref('00:00:00')
-  const totalTimeWorked = ref('')
-  const clockInTime = ref('')
-  const clockOutTime = ref('')
-  const clockInLocation = ref('')
-  const clockOutLocation = ref('')
+const isClockedIn = ref(false);
+const elapsedTime = ref(0);
+const timerInterval = ref(null);
+const formattedTime = ref("00:00:00");
+const totalTimeWorked = ref("");
+const clockInTime = ref("");
+const clockOutTime = ref("");
+const clockInLocation = ref("");
+const clockOutLocation = ref("");
+const theme = ref("light");
 
-  const getLocation = () => {
-   return new Promise((resolve, reject) => {
+const toogleTheme = () => {
+  theme.value = theme.value === "light" ? "dark" : "light";
+};
+
+
+const getLocation = () => {
+  return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
-      reject('Geolocation not supported')
+      reject("Geolocation not supported");
     } else {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
-          const { latitude, longitude } = position.coords
+          const { latitude, longitude } = position.coords;
           try {
             const response = await fetch(
               `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
-            )
-            const data = await response.json()
+            );
+            const data = await response.json();
 
-            const road = data.address.road || ''
-            const suburb = data.address.suburb || data.address.neighbourhood || ''
-            const city = data.address.city || data.address.town ||data.address.villge || ''
-            const country = data.address.country || ''
+            const road = data.address.road || "";
+            const suburb = data.address.suburb || data.address.neighbourhood || "";
+            const city =
+              data.address.city ||
+              data.address.town ||
+              data.address.village ||
+              "";
+            const country = data.address.country || "";
 
-            const locationParts = [road, suburb, city, country].filter(Boolean)
-            const fullAddress = locationParts.join(', ')
-            resolve(fullAddress || 'Location found')
-          } catch (error){
-          resolve(`Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`)
+            const locationParts = [road, suburb, city, country].filter(Boolean);
+            const fullAddress = locationParts.join(", ");
+            resolve(fullAddress || "Location found");
+          } catch (error) {
+            resolve(`Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`);
           }
         },
-        () => reject('Unable to retrieve location')
-      )
+        () => reject("Unable to retrieve location")
+      );
     }
-  })
-  }
-  
-  const handleClockIn = async () => {
-    if (timerInterval.value) return
-    totalTimeWorked.value = ''
-    clockOutTime.value = ''
-    clockOutLocation.value = ''
+  });
+};
 
-    try {
-      const location = await getLocation()
-      clockInLocation.value = location 
-    } catch (error) {
-      clockInLocation.value = 'Location unavailable'
-    }
-    const now = new Date()
-    clockInTime.value = now.toLocaleString()
-    const start = Date.now() - elapsedTime.value * 1000
-    timerInterval.value = setInterval(() => {
-      elapsedTime.value = Math.floor((Date.now() - start) / 1000)
-      formattedTime.value = formatTime(elapsedTime.value)
-    }, 1000)
+
+const handleClockIn = async () => {
+  if (timerInterval.value) return;
+  totalTimeWorked.value = "";
+  clockOutTime.value = "";
+  clockOutLocation.value = "";
+
+  try {
+    const location = await getLocation();
+    clockInLocation.value = location;
+  } catch (error) {
+    clockInLocation.value = "Location unavailable";
   }
 
-  const handleClockOut = async () => {
-    if (!timerInterval.value) return
-    clearInterval(timerInterval.value)
-    timerInterval.value = null
-    const now = new Date()
-    clockOutTime.value = now.toLocaleString()
-    totalTimeWorked.value = formatTime(elapsedTime.value)
+  const now = new Date();
+  clockInTime.value = now.toLocaleString();
 
-    elapsedTime.value = 0
-    formattedTime.value = '00:00:00'
+  const start = Date.now() - elapsedTime.value * 1000;
+  timerInterval.value = setInterval(() => {
+    elapsedTime.value = Math.floor((Date.now() - start) / 1000);
+    formattedTime.value = formatTime(elapsedTime.value);
+  }, 1000);
 
-    try {
-      const location = await getLocation()
-      clockOutLocation.value = location 
-    } catch (error) {
-      clockOutLocation.value = 'Location unavailable'
-    }
+  isClockedIn.value = true;
+};
+
+const handleClockOut = async () => {
+  if (!timerInterval.value) return;
+  clearInterval(timerInterval.value);
+  timerInterval.value = null;
+
+  const now = new Date();
+  clockOutTime.value = now.toLocaleString();
+  totalTimeWorked.value = formatTime(elapsedTime.value);
+
+  elapsedTime.value = 0;
+  formattedTime.value = "00:00:00";
+
+  try {
+    const location = await getLocation();
+    clockOutLocation.value = location;
+  } catch (error) {
+    clockOutLocation.value = "Location unavailable";
   }
 
+  isClockedIn.value = false;
 
-  const startTimer = () => {
-    if (timerInterval.value) return
-    totalTimeWorked.value = ''
-    const start = Date.now() - elapsedTime.value * 1000
-    timerInterval.value = setInterval(() => {
-      elapsedTime.value = Math.floor((Date.now() - start) / 1000)
-      formattedTime.value = formatTime(elapsedTime.value)
-    }, 1000)
-  }
+  await nextTick();
+};
 
-  const stopTimer = () => {
-    if (!timerInterval.value) return
-    clearInterval(timerInterval.value)
-    timerInterval.value = null
-    totalTimeWorked.value = formatTime(elapsedTime.value)
-  }
+const startTimer = () => {
+  if (timerInterval.value) return;
+  totalTimeWorked.value = "";
+  const start = Date.now() - elapsedTime.value * 1000;
+  timerInterval.value = setInterval(() => {
+    elapsedTime.value = Math.floor((Date.now() - start) / 1000);
+    formattedTime.value = formatTime(elapsedTime.value);
+  }, 1000);
+};
 
-  const formatTime = (seconds) => {
-    const hrs = String(Math.floor(seconds / 3600)).padStart(2, '0')
-    const mins = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')
-    const secs = String(Math.floor(seconds % 60)).padStart(2, '0')
-    return `${hrs}:${mins}:${secs}`
-  }
+const stopTimer = () => {
+  if (!timerInterval.value) return;
+  clearInterval(timerInterval.value);
+  timerInterval.value = null;
+  totalTimeWorked.value = formatTime(elapsedTime.value);
+};
 
-  onUnmounted(() => {
-    if (timerInterval.value) clearInterval(timerInterval.value)
-  })
+const formatTime = (seconds) => {
+  const hrs = String(Math.floor(seconds / 3600)).padStart(2, "0");
+  const mins = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const secs = String(Math.floor(seconds % 60)).padStart(2, "0");
+  return `${hrs}:${mins}:${secs}`;
+};
 
+
+onUnmounted(() => {
+  if (timerInterval.value) clearInterval(timerInterval.value);
+});
 </script>
 
-<style lang="scss" scoped>
-.clockin-out {
-  font-family: Poppins, sans-serif;
-  background-color: rgb(235, 255, 253);
+<style scoped lang="scss">
+.app-container {
   min-height: 100vh;
-  margin: 0;
-  padding: 0;
+  font-family: "Poppins", sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  &.light {
+    background-color: #E8FFF9;
+    color: #000;
+  }
+  &.dark {
+    background-color: #1E1E1E;
+    color: #F2F2F2;
+  }
 }
-
-/* ===== HEADER ===== */
-header {
+/* Navbar */
+.navbar {
+  background: #248A6C;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #248A6C;
-  padding: 15px 30px;
-  flex-wrap: wrap; /* Allow wrapping on smaller screens */
-  gap: 10px;
-
-  .header-left {
-    background: #fff;
+  padding: 10px 20px;
+  color: #fff;
+  .logo {
     display: flex;
     align-items: center;
-    gap: 15px;
-    padding: 10px 15px;
-    border-radius: 10px;
-
+    gap: 10px;
     img {
-      width: 80px;
-      height: 80px;
-      object-fit: cover;
-      border-radius: 50%;
-      border: 3px solid #4caf50;
+      width: 35px;
+      height: 35px;
     }
-
-    h4 {
-      margin: 0;
+    h3 {
+      font-weight: bold;
       font-size: 1.2rem;
-      color: #333;
     }
   }
-
-  .header-right {
-    color: #fff;
-    text-align: center;
-    flex: 1;
-
-    h1 {
-      font-size: 1.8rem;
-      margin-bottom: 5px;
+  nav {
+    display: flex;
+    gap: 20px;
+    a {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    .theme-toggle {
+      background: none;
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      color: #fff;
+    }
+    .logout {
+      background: #fff;
+      color: #248A6C;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-weight: 600;
+      &:hover {
+        background: #C2F7E2;
+      }
     }
   }
 }
-
-/* ===== TIMER SECTION ===== */
-.timer {
+/* Timer */
+.hours-title {
   text-align: center;
-  font-weight: bold;
-  color: #000000;
-  margin: 10px 0;
-
-  h5 {
-    font-size: 1.2rem;
-    margin-bottom: 5px;
-  }
-
-  h2 {
-    font-size: 2.5rem;
-    margin: 0;
-  }
+  margin-top: 20px;
 }
-
-/* ===== CLOCK CARDS ===== */
-.clock-container {
+.timer-display {
+  text-align: center;
+  font-size: 2.4rem;
+  font-weight: bold;
+  margin-bottom: 20px;
+}
+/* Cards */
+// .cards {
+//   display: flex;
+//   justify-content: center;
+//   flex-wrap: wrap;
+//   gap: 20px;
+//   .card {
+//     font-family: "Poppins", sans-serif;
+//     font-weight: 500;
+//     color: #000;
+//     background: #fff;
+//     border-radius: 10px;
+//     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+//     padding: 20px;
+//     text-align: center;
+//     width: 260px;
+//     border-left: 3px solid #248A6C;
+//     transition: transform 0.2s ease;
+//     &:hover {
+//       transform: translateY(-5px);
+//     }
+//     h2 {
+//       font-size: 1.1rem;
+//       margin-bottom: 10px;
+//     }
+//     .location {
+//       margin: 10px 0;
+//     }
+//     .clock-btn {
+//       background: #248A6C;
+//       color: #fff;
+//       border: none;
+//       padding: 8px 20px;
+//       border-radius: 6px;
+//       cursor: pointer;
+//       &:hover {
+//         background: #1E7259;
+//       }
+//     }
+//   }
+// }
+.cards {
   display: flex;
   justify-content: center;
-  gap: 15px;
   flex-wrap: wrap;
-  margin-top: 10px;
-  padding: 0 10px;
+  gap: 20px;
 
   .card {
     background: #fff;
-    border-radius: 8px;
-    padding: 15px;
-    flex: 1 1 220px;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    padding: 20px;
     text-align: center;
-    border-left: 2px solid #000;
-    border-bottom: 2px solid #000;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    width: 260px;
+    border-left: 3px solid #248A6C;
+    transition: transform 0.2s ease;
+    font-family: "Poppins", sans-serif; /* ensure consistency */
+    font-weight: 500; /* uniform medium weight */
+    color: #000; /* consistent text color for light mode */
 
     &:hover {
       transform: translateY(-5px);
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.25);
     }
 
-    h4, h5 {
+    h2 {
+      font-size: 1.1rem;
       margin-bottom: 10px;
-      color: #000;
+      font-family: inherit;
+      font-weight: 900;
+      color: inherit;
     }
 
-    button {
-      background-color: #248A6C;
-      color: white;
+    h4, p, strong {
+      font-family: inherit;
+      font-weight: 500;
+      color: inherit;
+    }
+
+    .location {
+      margin: 10px 0;
+    }
+
+    .clock-btn {
+      background: #248A6C;
+      color: #fff;
       border: none;
-      padding: 10px 20px;
-      font-size: 1rem;
-      border-radius: 4px;
+      padding: 8px 20px;
+      border-radius: 6px;
       cursor: pointer;
-      transition: background-color 0.3s ease;
 
       &:hover {
-        background-color: #45A049;
+        background: #1E7259;
       }
     }
+  }
+}
 
-    &.clock-out button {
-      background-color: #248A6C;
 
-      &:hover {
-        background-color: #E53935;
-      }
-    }
-
-    .clock-label {
-      margin-top: 8px;
-      font-size: 0.95rem;
-      color: #000;
-    }
-
-    .worked-time {
-      margin-top: 5px;
-      font-size: 1rem;
-      color: #000;
+.break-hours {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 30px;
+  margin-top: 30px;
+  .break-section {
+    display: flex;
+    flex-direction: column;
+    label {
       font-weight: bold;
+      margin-bottom: 5px;
+    }
+    select {
+      padding: 5px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
     }
   }
-}
-
-/* ======== RESPONSIVE DESIGN ======== */
-
-/* Tablets (<= 992px) */
-@media (max-width: 992px) {
-  header {
-    flex-direction: column;
-    align-items: center;
+  .hours-section {
     text-align: center;
-
-    .header-left {
-      flex-direction: column;
-      img {
-        width: 70px;
-        height: 70px;
-      }
-    }
-
-    .header-right h1 {
-      font-size: 1.5rem;
-    }
-  }
-
-  .timer h2 {
-    font-size: 2rem;
-  }
-
-  .clock-container {
-    gap: 10px;
-
-    .card {
-      flex: 1 1 45%;
-    }
   }
 }
-
-/* Phones (<= 600px) */
-@media (max-width: 600px) {
-  header {
-    flex-direction: column;
-    padding: 10px 15px;
-
-    .header-left {
-      flex-direction: column;
-      align-items: center;
-      gap: 10px;
-
-      img {
-        width: 60px;
-        height: 60px;
-      }
-
-      h4 {
-        font-size: 1rem;
-      }
-
-      p {
-        font-size: 0.85rem;
-        text-align: center;
-      }
-    }
-
-    .header-right h1 {
-      font-size: 1.3rem;
-      margin-top: 5px;
-    }
+/* Dark mode overrides */
+.dark {
+  .navbar {
+    background: #333;
   }
-
-  .timer h2 {
-    font-size: 1.8rem;
+  .card {
+    font-family: "Poppins", sans-serif;
+    font-weight: 500;
+    background: #2B2B2B;
+    color: #fff;
+    border-left-color: #4EE2AE;
   }
-
-  .clock-container {
-    flex-direction: column;
-    align-items: center;
-    .card {
-      width: 100%;
-      max-width: 320px;
-    }
+  .clock-btn {
+    background: #4EE2AE;
+    color: #1E1E1E;
   }
-}
-
-/* Very small screens (<= 400px) */
-@media (max-width: 400px) {
-  .header-left img {
-    width: 50px;
-    height: 50px;
-  }
-
-  .header-right h1 {
-    font-size: 1.1rem;
-  }
-
-  .timer h2 {
-    font-size: 1.5rem;
-  }
-
-  button {
-    padding: 8px 16px;
-    font-size: 0.9rem;
+  .logout {
+    background: #4EE2AE !important;
+    color: #000 !important;
   }
 }
 </style>
