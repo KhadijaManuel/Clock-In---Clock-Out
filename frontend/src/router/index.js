@@ -4,13 +4,16 @@ import QrScanner from '@/components/QrScanner.vue';
 import Clock from '../components/Clock.vue';
 
 const routes = [
-
-  //Bheka
-  //Redirect the root URL "/" to the Clock page
-  { path: '/', redirect: '/clockin-out' },
-
-  { path: '/break', component: BreakManagement },
-
+  {
+    path: '/',
+    name: 'Clock',
+    component: Clock
+  },
+  {
+    path: '/break',
+    name: 'break',
+    component: BreakManagement
+  },
   {
     path: '/qrscanner',
     name: 'qrscanner',
@@ -22,9 +25,9 @@ const routes = [
     name: 'clock',
     component: Clock
   },
-   //Catch-all route for 404 Not Found pages
+  // Catch-all -> redirect to home
   { path: '/:pathMatch(.*)*', redirect: '/' }
-]
+];
 
 const router = createRouter({
   history: createWebHistory(),
