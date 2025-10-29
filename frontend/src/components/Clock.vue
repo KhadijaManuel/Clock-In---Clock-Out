@@ -325,13 +325,10 @@ onUnmounted(() => {
     width: 260px;
     border-left: 3px solid #248A6C;
     transition: transform 0.2s ease;
-    font-family: "Poppins", sans-serif; /* ensure consistency */
-    font-weight: 500; /* uniform medium weight */
-    color: #000; /* consistent text color for light mode */
+    font-family: "Poppins", sans-serif; 
+    font-weight: 500; 
+    color: #000; 
 
-    &:hover {
-      transform: translateY(-5px);
-    }
 
     h2 {
       font-size: 1.1rem;
@@ -359,9 +356,7 @@ onUnmounted(() => {
       border-radius: 6px;
       cursor: pointer;
 
-      &:hover {
-        background: #1E7259;
-      }
+      
     }
   }
 }
