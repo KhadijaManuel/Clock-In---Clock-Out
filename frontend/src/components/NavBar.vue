@@ -1,8 +1,8 @@
 <template>
   <nav class="navbar">
-    <router-link to="/clockin-out" class="nav-link" exact>Home</router-link>
-    <router-link to="/break" class="nav-link">Break</router-link>
-    <router-link to="/qrscanner" class="nav-link">QrScanner</router-link> 
+    <router-link to="/" class="nav-link" exact>Home</router-link>
+    <router-link to="/clock" class="nav-link">Clock-in</router-link>
+    <router-link to="/break" class="nav-link">Break</router-link> 
   </nav>
 </template>
 
