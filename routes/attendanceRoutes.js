@@ -1,38 +1,44 @@
+// routes/attendanceRoutes.js
 import express from "express";
 import { clockIn, clockOut, getAttendance } from "../controllers/attendanceController.js";
 
 const router = express.Router();
 
-// Explicit clock-in and clock-out endpoints
+/**
+ * @route   POST /api/attendance/clockin
+ * @desc    Employee clock-in endpoint
+ * @body    { employeeId: number }
+ */
 router.post("/clockin", clockIn);
+
+/**
+ * @route   POST /api/attendance/clockout
+ * @desc    Employee clock-out endpoint
+ * @body    { employeeId: number }
+ */
 router.post("/clockout", clockOut);
 
-// Backwards-compatible single POST endpoint which inspects `action` in body
-router.post("/", (req, res) => {
-  const action = req.body.action;
-  if (action === "Clock In") return clockIn(req, res);
-  if (action === "Clock Out") return clockOut(req, res);
-  res.status(400).json({ message: "Invalid action. Use 'Clock In' or 'Clock Out'" });
-});
-
-// Simple echo endpoint for debugging route reachability
-router.post('/echo', (req, res) => {
-  res.json({ message: 'echo', body: req.body });
-});
-
-// Gets employee attendance records
-router.get("/:employeeId", async (req, res) => {
-  const numericId = parseInt(req.params.employeeId, 10);
-  if (isNaN(numericId)) {
-    return res.status(400).json({ message: "Employee ID must be a number" });
-  }
-  req.query.employeeId = numericId;
-  return getAttendance(req, res);
-});
-
-// Get all attendance logs
+/**
+ * @route   GET /api/attendance/logs
+ * @desc    Fetch all attendance data (for admin/testing)
+ */
 router.get("/logs", getAttendance);
 
+/**
+ * @route   POST /api/attendance
+ * @desc    Backwards-compatible endpoint (auto-detects action)
+ * @body    { employeeId: number, action: "Clock In" | "Clock Out" }
+ */
+router.post("/", (req, res) => {
+  const { action } = req.body;
+  if (action === "Clock In") return clockIn(req, res);
+  if (action === "Clock Out") return clockOut(req, res);
+  return res.status(400).json({ message: "Invalid action. Use 'Clock In' or 'Clock Out'." });
+});
+
 export default router;
+
+
+
 
 

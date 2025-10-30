@@ -1,115 +1,126 @@
-// sheetService: a thin wrapper to append attendance logs to Google Sheets.
-// Responsibilities:
-// - Provides an appendLog(log) function that appends a log to the configured
-//   Google Sheets spreadsheet and range.
-// - Provides a hasClockInToday(employeeId) function that checks whether the
-//   given employee has a "Clock In" entry for today in the sheet.
+// sheetService.js
+// Handles attendance logging to Google Sheets for clock-in/out
 
 import { readFile } from "fs/promises";
+import { google } from "googleapis";
 
 const USE_SHEETS = process.env.USE_SHEETS === "true";
-const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || process.env.SHEET_ID;
-const SHEET_RANGE = process.env.GOOGLE_SHEETS_RANGE || "Sheet1!A:D"; // default range
+const SPREADSHEET_ID = process.env.SHEET_ID || process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+const SHEET_RANGE = process.env.GOOGLE_SHEETS_RANGE || "Attendance!A:G";
 
-// Build an authorized JWT client for the Google Sheets API. Returns { jwt, google }
-// to allow lazy-importing the googleapis module only when needed.
+// --- Google Auth Setup ---
 async function getAuthClient() {
-  // attempts to obtain service account JSON from env or file
   let keyJson = null;
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    try {
-      keyJson = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-    } catch (e) {
-      console.error("sheetService: failed to parse GOOGLE_SERVICE_ACCOUNT_JSON", e?.message || e);
-      keyJson = null;
-    }
-  }
-  if (!keyJson && process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    try {
-      const raw = await readFile(process.env.GOOGLE_APPLICATION_CREDENTIALS, "utf8");
-      keyJson = JSON.parse(raw);
-    } catch (e) {
-      console.error("sheetService: failed to read GOOGLE_APPLICATION_CREDENTIALS", e?.message || e);
-      keyJson = null;
-    }
+    keyJson = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    const raw = await readFile(process.env.GOOGLE_APPLICATION_CREDENTIALS, "utf8");
+    keyJson = JSON.parse(raw);
   }
 
-  if (!keyJson) return null;
+  if (!keyJson) throw new Error("Missing Google service account credentials.");
 
-  // lazy import so consumers who don't enable sheets won't need googleapis installed
-  const { google } = await import("googleapis");
   const scopes = ["https://www.googleapis.com/auth/spreadsheets"];
   const jwt = new google.auth.JWT(keyJson.client_email, null, keyJson.private_key, scopes);
   await jwt.authorize();
-  return { jwt, google };
+  return google.sheets({ version: "v4", auth: jwt });
 }
 
-export async function appendLog(log) {
-  // No-op when sheets integration is disabled to keep developer ergonomics simple
-  if (!USE_SHEETS) return;
-  if (!SPREADSHEET_ID) {
-    console.error("sheetService: GOOGLE_SHEETS_SPREADSHEET_ID not set");
-    return;
+// --- Helper: Read all rows from sheet ---
+async function readSheet() {
+  const sheets = await getAuthClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: SHEET_RANGE,
+  });
+  return res.data.values || [];
+}
+
+// --- Helper: Convert JS Date → Sheet Date format (dd/mm/yyyy) ---
+function formatDate(date) {
+  return date.toLocaleDateString("en-GB");
+}
+
+// --- Check if employee already clocked in today ---
+export async function hasClockedInToday(employeeId) {
+  const rows = await readSheet();
+  const today = formatDate(new Date());
+
+  return rows.some(
+    (row) =>
+      String(row[0]) === String(employeeId) &&
+      row[2] !== "—" &&
+      row[2] !== "" &&
+      row[6] === today // Date column (7th)
+  );
+}
+
+// --- Append or update a Clock-In ---
+export async function appendClockIn({ employeeId, name }) {
+  if (!USE_SHEETS) throw new Error("Google Sheets integration disabled.");
+  const sheets = await getAuthClient();
+  const rows = await readSheet();
+
+  const today = formatDate(new Date());
+  const currentTime = new Date().toTimeString().split(" ")[0];
+  const status = currentTime <= "09:00:00" ? "OnTime" : "Late";
+
+  // Check if employee already has a record today
+  const existingIndex = rows.findIndex(
+    (r) => String(r[0]) === String(employeeId) && r[6] === today
+  );
+
+  if (existingIndex !== -1 && rows[existingIndex][2] !== "—") {
+    return { message: "Already clocked in today" };
   }
 
-  try {
-    const auth = await getAuthClient();
-    if (!auth) {
-      console.error("sheetService: no Google auth available");
-      return;
-    }
-
-    const sheets = auth.google.sheets({ version: "v4", auth: auth.jwt });
-
-    // Append rows in the order: employeeId, name, action, timestamp. Keep
-    // the shape compact so the spreadsheet is easy to filter/sort later.
-    const values = [[log.employeeId, log.name, log.action, log.timestamp]];
+  if (existingIndex === -1) {
+    // Append new record
+    const values = [
+      [employeeId, name, currentTime, "—", status, "Work", today],
+    ];
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
       range: SHEET_RANGE,
-      valueInputOption: "RAW",
-      requestBody: { values },
+      valueInputOption: "USER_ENTERED",
+      resource: { values },
     });
-  } catch (err) {
-    // Let callers decide how to handle failures; we log here for visibility.
-    console.error("sheetService: failed to append log:", err?.message || err);
-    throw err;
+  } else {
+    // Update CheckIn for existing row
+    const range = `Attendance!C${existingIndex + 1}`; // Column C = CheckIn
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+      valueInputOption: "USER_ENTERED",
+      resource: { values: [[currentTime]] },
+    });
   }
+
+  return { message: "Clock-in successful", employeeId, name, time: currentTime };
 }
 
-// hasClockInToday: reads the configured sheet range and checks whether a row
-// exists for the given employeeId and action on today's date. Returns true
-// when a matching row is found.
-export async function hasClockInToday(employeeId, action = 'Clock In') {
-  if (!USE_SHEETS) throw new Error('Sheets integration is not enabled (USE_SHEETS=false)');
-  if (!SPREADSHEET_ID) throw new Error('GOOGLE_SHEETS_SPREADSHEET_ID is not configured');
+// --- Append or update a Clock-Out ---
+export async function appendClockOut({ employeeId }) {
+  const sheets = await getAuthClient();
+  const rows = await readSheet();
+  const today = formatDate(new Date());
+  const currentTime = new Date().toTimeString().split(" ")[0];
 
-  const auth = await getAuthClient();
-  if (!auth) throw new Error('Google auth not available');
+  const index = rows.findIndex(
+    (r) => String(r[0]) === String(employeeId) && r[6] === today
+  );
 
-  const sheets = auth.google.sheets({ version: 'v4', auth: auth.jwt });
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: SHEET_RANGE });
-  const rows = resp?.data?.values || [];
-
-  const today = new Date();
-  const sameDate = (ts) => {
-    const d = new Date(ts);
-    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
-  };
-
-  for (const row of rows) {
-    // Expected row format: [employeeId, name, action, timestamp]
-    const rEmployee = row[0];
-    const rAction = row[2];
-    const rTs = row[3];
-    if (!rEmployee || !rAction || !rTs) continue;
-    if (String(rEmployee) === String(employeeId) && String(rAction) === String(action)) {
-      try {
-        if (sameDate(rTs)) return true;
-      } catch (e) {
-        // ignore parse errors and continue
-      }
-    }
+  if (index === -1) {
+    return { message: "Cannot clock out before clocking in" };
   }
-  return false;
+
+  const range = `Attendance!D${index + 1}`; // Column D = CheckOut
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range,
+    valueInputOption: "USER_ENTERED",
+    resource: { values: [[currentTime]] },
+  });
+
+  return { message: "Clock-out successful", employeeId, time: currentTime };
 }
