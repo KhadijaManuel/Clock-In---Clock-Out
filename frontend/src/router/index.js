@@ -1,32 +1,24 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import BreakManagement from '../components/BreakManagement.vue';
-import QrScanner from '@/components/QrScanner.vue';
-import Clock from '../components/Clock.vue';
+import HomeView from '@/views/HomeView.vue';
+import BreakView from '@/views/BreakView.vue';
+import ClockView from '@/views/ClockView.vue';
 
 const routes = [
   {
     path: '/',
-    name: 'Clock',
-    component: Clock
+    name: 'home',
+    component: HomeView
+  },
+  {
+    path: '/clock',
+    name: 'clock',
+    component: ClockView
   },
   {
     path: '/break',
     name: 'break',
-    component: BreakManagement
-  },
-  {
-    path: '/qrscanner',
-    name: 'qrscanner',
-    component: QrScanner
-  },
-    // { path: '/clockin', component: ClockIn },
-  {
-    path: '/clockin-out',
-    name: 'clock',
-    component: Clock
-  },
-  // Catch-all -> redirect to home
-  { path: '/:pathMatch(.*)*', redirect: '/' }
+    component: BreakView
+  }
 ];
 
 const router = createRouter({
