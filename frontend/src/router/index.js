@@ -19,6 +19,7 @@ const routes = [
     name: 'qrscanner',
     component: QrScanner
   },
+    // { path: '/clockin', component: ClockIn },
   {
     path: '/clockin-out',
     name: 'clock',
