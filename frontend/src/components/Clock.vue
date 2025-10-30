@@ -44,15 +44,17 @@
       </div>
       <div class="hours-section">
         <h3>Hours Worked</h3>
-        <p>Day 20 - 5h</p>
-        <p>Day 30 - 3h</p>
+        <p><strong>Day 20 - 5h</strong></p>
+        <p><strong>Day 30 - 3h</strong></p>
       </div>
+      <div id="map"></div>
     </main>
   </div>
 </template>
 
 <script setup>
 import { ref, onUnmounted, nextTick } from "vue";
+import 'leaflet/dist/leaflet.css';
 
 const isClockedIn = ref(false);
 const elapsedTime = ref(0);
@@ -69,42 +71,34 @@ const toogleTheme = () => {
   theme.value = theme.value === "light" ? "dark" : "light";
 };
 
-
 const getLocation = () => {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject("Geolocation not supported");
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          try {
-            const response = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
-            );
-            const data = await response.json();
-
-            const road = data.address.road || "";
-            const suburb = data.address.suburb || data.address.neighbourhood || "";
-            const city =
-              data.address.city ||
-              data.address.town ||
-              data.address.village ||
-              "";
-            const country = data.address.country || "";
-
-            const locationParts = [road, suburb, city, country].filter(Boolean);
-            const fullAddress = locationParts.join(", ");
-            resolve(fullAddress || "Location found");
-          } catch (error) {
-            resolve(`Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`);
-          }
-        },
-        () => reject("Unable to retrieve location")
-      );
-    }
-  });
+  const latitude = -34.03;
+  const longitude = 18.6;
+  const locationName = "Imam Haron Road, Lansdowne, Cape Town, South Africa"; 
+  return Promise.resolve(
+    `${locationName}`
+  );
 };
+// const getLocation = async () => {
+//   const latitude = -33.9860846;
+//   const longitude = 18.4932193;
+
+//   try {
+//     const response = await fetch(
+//       `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
+//     );
+//     const data = await response.json();
+//     const road = data.address.road || "";
+//     const suburb = data.address.suburb || data.address.neighbourhood || "";
+//     const city = data.address.city || data.address.town || data.address.village || "";
+//     const country = data.address.country || "";
+//     const locationParts = [road, suburb, city, country].filter(Boolean);
+//     const fullAddress = locationParts.join(", ");
+//     return fullAddress || `Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`;
+//   } catch (error) {
+//     resolve(`Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`);
+//   }
+// };
 
 
 const handleClockIn = async () => {
@@ -269,47 +263,7 @@ onUnmounted(() => {
   font-weight: bold;
   margin-bottom: 20px;
 }
-/* Cards */
-// .cards {
-//   display: flex;
-//   justify-content: center;
-//   flex-wrap: wrap;
-//   gap: 20px;
-//   .card {
-//     font-family: "Poppins", sans-serif;
-//     font-weight: 500;
-//     color: #000;
-//     background: #fff;
-//     border-radius: 10px;
-//     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
-//     padding: 20px;
-//     text-align: center;
-//     width: 260px;
-//     border-left: 3px solid #248A6C;
-//     transition: transform 0.2s ease;
-//     &:hover {
-//       transform: translateY(-5px);
-//     }
-//     h2 {
-//       font-size: 1.1rem;
-//       margin-bottom: 10px;
-//     }
-//     .location {
-//       margin: 10px 0;
-//     }
-//     .clock-btn {
-//       background: #248A6C;
-//       color: #fff;
-//       border: none;
-//       padding: 8px 20px;
-//       border-radius: 6px;
-//       cursor: pointer;
-//       &:hover {
-//         background: #1E7259;
-//       }
-//     }
-//   }
-// }
+
 .cards {
   display: flex;
   justify-content: center;
@@ -322,7 +276,7 @@ onUnmounted(() => {
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
     padding: 20px;
     text-align: center;
-    width: 260px;
+    width: 400px;
     border-left: 3px solid #248A6C;
     transition: transform 0.2s ease;
     font-family: "Poppins", sans-serif; 
@@ -331,7 +285,7 @@ onUnmounted(() => {
 
 
     h2 {
-      font-size: 1.1rem;
+      font-size: 2.1rem;
       margin-bottom: 10px;
       font-family: inherit;
       font-weight: 900;
@@ -340,7 +294,7 @@ onUnmounted(() => {
 
     h4, p, strong {
       font-family: inherit;
-      font-weight: 500;
+      font-weight: 700;
       color: inherit;
     }
 
@@ -352,6 +306,7 @@ onUnmounted(() => {
       background: #248A6C;
       color: #fff;
       border: none;
+      width: 250px;
       padding: 8px 20px;
       border-radius: 6px;
       cursor: pointer;
@@ -368,24 +323,10 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 30px;
   margin-top: 30px;
-  .break-section {
-    display: flex;
-    flex-direction: column;
-    label {
-      font-weight: bold;
-      margin-bottom: 5px;
-    }
-    select {
-      padding: 5px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-    }
-  }
   .hours-section {
     text-align: center;
-  }
 }
-/* Dark mode overrides */
+}
 .dark {
   .navbar {
     background: #333;
