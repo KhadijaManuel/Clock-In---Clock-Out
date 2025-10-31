@@ -25,6 +25,7 @@ body {
   background: #f8f9fa;
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
 }
 .app {
   text-align: center;
