@@ -181,7 +181,41 @@
         </tr>
       </thead>
       <tbody>
-        <!-- Data will be injected here -->
+        <?php
+        include_once 'db.php';
+        
+        $query = "
+            SELECT 
+                CONCAT(e.first_name, ' ', e.last_name) as name,
+                ec.department,
+                hm.total_worked_hours as hoursWorked,
+                hm.hours_owed as hoursOwed
+            FROM hours_management hm
+            JOIN employees e ON hm.employee_id = e.employee_id
+            JOIN emp_classification ec ON e.classification_id = ec.classification_id
+            WHERE hm.week_start = '2025-10-27' AND hm.week_end = '2025-10-31'
+            ORDER BY e.first_name, e.last_name
+        ";
+        
+        $result = $conn->query($query);
+        $attendanceData = array();
+        
+        if ($result && $result->num_rows > 0) {
+            while ($row = $result->fetch_assoc()) {
+                $attendanceData[] = $row;
+                echo "<tr>
+                    <td>{$row['name']}</td>
+                    <td>{$row['department']}</td>
+                    <td>{$row['hoursWorked']}</td>
+                    <td>{$row['hoursOwed']}</td>
+                </tr>";
+            }
+        } else {
+            echo "<tr><td colspan='4'>No data found for current week</td></tr>";
+        }
+        
+        $json_data = json_encode($attendanceData);
+        ?>
       </tbody>
     </table>
   </section>
@@ -203,26 +237,9 @@
   </div>
 
   <script>
-    // Empty array ready for backend data
-    let attendanceData = [];
+    let attendanceData = <?php echo $json_data; ?> || [];
 
     let barChartInstance, pieChartInstance;
-
-    // --- Render table ---
-    function renderTable(data) {
-      const tbody = document.querySelector('#attendanceTable tbody');
-      tbody.innerHTML = '';
-      data.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${row.name}</td>
-          <td>${row.department}</td>
-          <td>${row.hoursWorked}</td>
-          <td>${row.hoursOwed}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
 
     // --- Update charts ---
     function updateCharts(data) {
@@ -232,42 +249,66 @@
       if (barChartInstance) barChartInstance.destroy();
       if (pieChartInstance) pieChartInstance.destroy();
 
+      // Determine text color based on current mode
+      const isDarkMode = document.body.classList.contains('dark-mode');
+      const textColor = isDarkMode ? '#fff' : '#000';
+
       barChartInstance = new Chart(barCtx, {
         type: 'bar',
         data: {
           labels: data.map(d => d.name),
           datasets: [{
             label: 'Hours Worked',
-            data: data.map(d => d.hoursWorked),
+            data: data.map(d => parseInt(d.hoursWorked)),
             backgroundColor: '#22c55e'
           }]
         },
-        options: { responsive: true, plugins: { legend: { labels: { color: '#000' } } } }
+        options: { 
+          responsive: true, 
+          plugins: { 
+            legend: { 
+              labels: { 
+                color: textColor 
+              } 
+            } 
+          },
+          scales: {
+            x: {
+              ticks: {
+                color: textColor
+              }
+            },
+            y: {
+              ticks: {
+                color: textColor
+              }
+            }
+          }
+        }
       });
 
-      const totalWorked = data.reduce((sum, e) => sum + e.hoursWorked, 0);
-      const totalOwed = data.reduce((sum, e) => sum + e.hoursOwed, 0);
+      const totalWorked = data.reduce((sum, e) => sum + parseInt(e.hoursWorked), 0);
+      const totalOwed = data.reduce((sum, e) => sum + parseInt(e.hoursOwed), 0);
       pieChartInstance = new Chart(pieCtx, {
         type: 'pie',
         data: {
           labels: ['Hours Worked', 'Hours Owed'],
-          datasets: [{ backgroundColor: ['#22c55e', '#f97316'], data: [totalWorked, totalOwed] }]
+          datasets: [{ 
+            backgroundColor: ['#22c55e', '#f97316'], 
+            data: [totalWorked, totalOwed] 
+          }]
         },
-        options: { responsive: true }
+        options: { 
+          responsive: true,
+          plugins: {
+            legend: {
+              labels: {
+                color: textColor
+              }
+            }
+          }
+        }
       });
-    }
-
-    // --- Fetch backend data ---
-    async function fetchAttendanceData() {
-      try {
-        const response = await fetch('api/getAttendance.php'); // replace with real API endpoint
-        if (!response.ok) throw new Error('Network response was not ok');
-        attendanceData = await response.json();
-        renderTable(attendanceData);
-        updateCharts(attendanceData);
-      } catch (error) {
-        console.error('Failed to fetch attendance data:', error);
-      }
     }
 
     // --- Search filter ---
@@ -277,13 +318,28 @@
       const filteredData = attendanceData.filter(row => {
         return row.name.toLowerCase().includes(filter) || row.department.toLowerCase().includes(filter);
       });
-      renderTable(filteredData);
+      
+      // Update table
+      const tbody = document.querySelector('#attendanceTable tbody');
+      tbody.innerHTML = '';
+      filteredData.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.name}</td>
+          <td>${row.department}</td>
+          <td>${row.hoursWorked}</td>
+          <td>${row.hoursOwed}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      
       updateCharts(filteredData);
     });
 
     // --- CSV export ---
     document.getElementById('exportBtn').addEventListener('click', () => {
-      const rows = [['Employee', 'Department', 'Hours Worked', 'Hours Owed'],
+      const rows = [
+        ['Employee', 'Department', 'Hours Worked', 'Hours Owed'],
         ...attendanceData.map(d => [d.name, d.department, d.hoursWorked, d.hoursOwed])
       ];
       const csv = rows.map(r => r.join(',')).join('\n');
@@ -298,15 +354,18 @@
     const toggle = document.getElementById('modeToggle');
     const label = document.querySelector('.switch-label');
     const icon = document.querySelector('.icon');
+    
     toggle.addEventListener('change', () => {
       document.body.classList.toggle('dark-mode', toggle.checked);
       document.body.classList.toggle('light-mode', !toggle.checked);
       label.classList.toggle('is-on', toggle.checked);
       icon.textContent = toggle.checked ? '🌙' : '☀️';
+      
+      // Update charts with new colors
+      updateCharts(attendanceData);
     });
 
-    // --- Initial fetch from backend ---
-    fetchAttendanceData();
+    updateCharts(attendanceData);
 
   </script>
 </body>
