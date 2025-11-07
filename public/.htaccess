@@ -1,0 +1,9 @@
+RewriteEngine On
+RewriteBase /attendance_dashboard/public/
+
+# Route all /api/... calls to the API index
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/(.*)$ api/index.php [L,QSA]
+
+Options -Indexes
