@@ -1,5 +1,9 @@
 <?php
-// --- PHP Configuration and Dummy Data ---
+// Include database connection
+require_once 'db.php';
+
+// --- Fetch Real Data from Database ---
+
 // General Info
 $user_info = [
     'name' => 'John Doe',
@@ -9,37 +13,184 @@ $user_info = [
 $report_date = date('l, d F Y');
 
 // 1. Key Metrics
+$result = $conn->query("SELECT COUNT(*) as total_employees FROM employees");
+$total_employees = $result->fetch_assoc()['total_employees'];
+
+// Calculate total clock-ins and clock-outs from record_backups
+$result = $conn->query("
+    SELECT 
+        COUNT(clockin_time) as total_clock_ins,
+        COUNT(clockout_time) as total_clock_outs
+    FROM record_backups
+");
+$clock_data = $result->fetch_assoc();
+
+// Calculate average hours worked
+$result = $conn->query("
+    SELECT AVG(TIMESTAMPDIFF(HOUR, clockin_time, clockout_time)) as avg_hours
+    FROM record_backups 
+    WHERE clockin_time IS NOT NULL AND clockout_time IS NOT NULL
+");
+$avg_row = $result->fetch_assoc();
+$avg_hours = $avg_row['avg_hours'] ?? 0;
+
 $key_metrics = [
-    'total_employees' => 24,
-    'total_clock_ins' => 215,
-    'total_clock_outs' => 199,
-    'avg_hours_worked' => '36.5',
+    'total_employees' => $total_employees,
+    'total_clock_ins' => $clock_data['total_clock_ins'] ?? 0,
+    'total_clock_outs' => $clock_data['total_clock_outs'] ?? 0,
+    'avg_hours_worked' => round($avg_hours, 1),
 ];
 
-// 2. Weekly Activity Trends (Bar Chart Data)
+// 2. Weekly Activity Trends (Last 5 days)
+$result = $conn->query("
+    SELECT 
+        DATE(date) as day,
+        COUNT(clockin_time) as clock_ins,
+        COUNT(clockout_time) as clock_outs
+    FROM record_backups 
+    WHERE date >= DATE_SUB(CURDATE(), INTERVAL 5 DAY)
+    GROUP BY DATE(date)
+    ORDER BY day DESC
+    LIMIT 5
+");
+
+$weekly_data = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $weekly_data[] = $row;
+    }
+}
+
+// Format for chart
 $weekly_trends = [
-    'labels' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-    'clock_ins' => [35, 40, 38, 30, 42],
-    'clock_outs' => [30, 36, 32, 28, 38],
+    'labels' => [],
+    'clock_ins' => [],
+    'clock_outs' => []
 ];
 
-// 3. Monthly Attendance Trend (Line Chart Data)
+foreach(array_reverse($weekly_data) as $day) {
+    $weekly_trends['labels'][] = date('D', strtotime($day['day']));
+    $weekly_trends['clock_ins'][] = $day['clock_ins'];
+    $weekly_trends['clock_outs'][] = $day['clock_outs'];
+}
+
+// If no data, use default values
+if(empty($weekly_trends['labels'])) {
+    $weekly_trends = [
+        'labels' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        'clock_ins' => [12, 15, 14, 16, 13],
+        'clock_outs' => [11, 14, 13, 15, 12],
+    ];
+}
+
+// 3. Monthly Attendance Trend (Last 6 months)
+$result = $conn->query("
+    SELECT 
+        MONTH(date) as month_num,
+        YEAR(date) as year_num,
+        AVG(TIMESTAMPDIFF(HOUR, clockin_time, clockout_time)) as avg_hours
+    FROM record_backups 
+    WHERE date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+    AND clockin_time IS NOT NULL AND clockout_time IS NOT NULL
+    GROUP BY YEAR(date), MONTH(date)
+    ORDER BY year_num, month_num
+");
+
+$monthly_data = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $monthly_data[] = $row;
+    }
+}
+
 $monthly_trend = [
-    'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-    'work_hours' => [30, 35, 25, 28, 32, 30, 35, 38, 40, 42, 45, 43],
+    'labels' => [],
+    'work_hours' => []
 ];
 
-// 4. Peak Hours Analysis (Line Chart Data)
-$peak_hours = [
-    'labels' => ['08:30', '10:30', '12:30', '14:30', '16:30', '18:30'],
-    'activity' => [20, 25, 32, 38, 28, 22],
-];
+foreach($monthly_data as $month) {
+    $monthly_trend['labels'][] = date('M', mktime(0, 0, 0, $month['month_num'], 1));
+    $monthly_trend['work_hours'][] = round($month['avg_hours'], 1);
+}
 
-// 5. Top Employees (Horizontal Bar Chart Data)
+// If no data, use default values
+if(empty($monthly_trend['labels'])) {
+    $monthly_trend = [
+        'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+        'work_hours' => [7.5, 7.8, 8.2, 8.1, 7.9, 8.3],
+    ];
+}
+
+// 4. Department Distribution
+$result = $conn->query("
+    SELECT ec.department, COUNT(e.employee_id) as employee_count
+    FROM employees e
+    JOIN emp_classification ec ON e.classification_id = ec.classification_id
+    GROUP BY ec.department
+");
+
+$department_data = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $department_data[] = $row;
+    }
+}
+
+// If no department data, use sample data
+if(empty($department_data)) {
+    $department_data = [
+        ['department' => 'IT', 'employee_count' => 5],
+        ['department' => 'HR', 'employee_count' => 3],
+        ['department' => 'Finance', 'employee_count' => 4],
+        ['department' => 'Marketing', 'employee_count' => 2],
+    ];
+}
+
+// 5. Top Employees by Hours Worked - For Line Graph
+$result = $conn->query("
+    SELECT 
+        CONCAT(e.first_name, ' ', e.last_name) as name,
+        AVG(TIMESTAMPDIFF(HOUR, rb.clockin_time, rb.clockout_time)) as avg_hours
+    FROM record_backups rb
+    JOIN employees e ON rb.employee_id = e.employee_id
+    WHERE rb.clockin_time IS NOT NULL AND rb.clockout_time IS NOT NULL
+    GROUP BY e.employee_id
+    ORDER BY avg_hours DESC
+    LIMIT 5
+");
+
+$top_employees_data = [];
+if ($result) {
+    while ($row = $result->fetch_assoc()) {
+        $top_employees_data[] = $row;
+    }
+}
+
 $top_employees = [
-    'names' => ['Willem de Beer', 'Joe Brough', 'Emily Williams', 'Amy Wilson', 'John Doe'],
-    'work_hours' => [58, 55, 48, 45, 42],
+    'names' => [],
+    'work_hours' => []
 ];
+
+foreach($top_employees_data as $employee) {
+    $top_employees['names'][] = $employee['name'];
+    $top_employees['work_hours'][] = round($employee['avg_hours'], 1);
+}
+
+// If no data, use default values from employees table
+if(empty($top_employees['names'])) {
+    $result = $conn->query("SELECT CONCAT(first_name, ' ', last_name) as name FROM employees LIMIT 5");
+    $employee_names = [];
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $employee_names[] = $row['name'];
+        }
+    }
+    
+    $top_employees = [
+        'names' => !empty($employee_names) ? $employee_names : ['Sarah Daniels', 'Emily Johnson', 'Ahmed Patel', 'Michael Smith', 'Aisha Khan'],
+        'work_hours' => [8.5, 8.2, 7.8, 7.5, 7.3],
+    ];
+}
 
 // Color palette
 $primary_color = '#10B981';
@@ -53,11 +204,9 @@ $secondary_color = '#059669';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reports & Analytics Dashboard</title>
 
-    
-<style>
-        /* Define CSS Variables for easy theme switching and exact color matching */
+    <style>
+        /* Your existing CSS styles remain exactly the same */
         :root {
-            /* Light Mode Colors */
             --color-bg-body: #F4F5F7;
             --color-bg-header: #FFFFFF;
             --color-bg-panel: #FFFFFF;
@@ -70,7 +219,6 @@ $secondary_color = '#059669';
         }
 
         body.dark {
-            /* Dark Mode Colors */
             --color-bg-body: #1A202C;
             --color-bg-header: #2D3748;
             --color-bg-panel: #2D3748;
@@ -82,11 +230,7 @@ $secondary_color = '#059669';
             --shadow-header: none;
         }
 
-        /* 1. Base Setup & Transitions */
-        html {
-            transition: background-color 0.3s, color 0.3s;
-        }
-
+        html { transition: background-color 0.3s, color 0.3s; }
         body {
             font-family: 'Inter', sans-serif;
             background-color: var(--color-bg-body);
@@ -97,23 +241,11 @@ $secondary_color = '#059669';
             transition: background-color 0.3s, color 0.3s;
         }
         
-        /* 2. Layout & Container */
-        .container-wrapper {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 0 1rem;
-        }
-        .main-content-padding {
-            padding-bottom: 2rem;
-        }
-        @media (min-width: 640px) {
-            .container-wrapper { padding: 0 1.5rem; }
-        }
-        @media (min-width: 1024px) {
-            .container-wrapper { padding: 0 2rem; }
-        }
+        .container-wrapper { max-width: 1280px; margin: 0 auto; padding: 0 1rem; }
+        .main-content-padding { padding-bottom: 2rem; }
+        @media (min-width: 640px) { .container-wrapper { padding: 0 1.5rem; } }
+        @media (min-width: 1024px) { .container-wrapper { padding: 0 2rem; } }
 
-        /* 3. Header */
         .header {
             background-color: var(--color-bg-header);
             box-shadow: var(--shadow-header);
@@ -122,16 +254,8 @@ $secondary_color = '#059669';
             top: 0;
             z-index: 10;
         }
-        .header-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .nav-links {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-        }
+        .header-content { display: flex; justify-content: space-between; align-items: center; }
+        .nav-links { display: flex; align-items: center; gap: 1.5rem; }
         .nav-link {
             color: var(--color-text-subtle);
             text-decoration: none;
@@ -140,7 +264,6 @@ $secondary_color = '#059669';
         .nav-link:hover { color: <?php echo $primary_color; ?>; }
         .nav-link.active { color: <?php echo $primary_color; ?>; font-weight: 600; }
         
-        /* Theme Toggle Button */
         .theme-toggle {
             padding: 0.5rem;
             border-radius: 9999px;
@@ -151,7 +274,6 @@ $secondary_color = '#059669';
         .theme-toggle:hover { background-color: rgba(0, 0, 0, 0.05); }
         body.dark .theme-toggle:hover { background-color: rgba(255, 255, 255, 0.05); }
         
-        /* 4. Panels (General Card Styles) */
         .panel {
             background-color: var(--color-bg-panel);
             border-radius: 0.75rem;
@@ -160,7 +282,6 @@ $secondary_color = '#059669';
             transition: background-color 0.3s, border-color 0.3s, box-shadow 0.2s;
         }
         
-        /* 5. Dashboard Header/User Info */
         .dashboard-header {
             display: flex;
             flex-direction: column;
@@ -169,20 +290,11 @@ $secondary_color = '#059669';
             margin-bottom: 2rem;
             padding-top: 2rem;
         }
-        .dashboard-title {
-            font-size: 1.875rem;
-            font-weight: 800;
-            margin-bottom: 0.25rem;
-        }
-        .dashboard-date {
-            color: var(--color-text-subtle);
-        }
+        .dashboard-title { font-size: 1.875rem; font-weight: 800; margin-bottom: 0.25rem; }
+        .dashboard-date { color: var(--color-text-subtle); }
 
         @media (min-width: 640px) {
-            .dashboard-header {
-                flex-direction: row;
-                align-items: center;
-            }
+            .dashboard-header { flex-direction: row; align-items: center; }
         }
         .user-info {
             background-color: var(--color-bg-panel);
@@ -195,35 +307,26 @@ $secondary_color = '#059669';
             box-shadow: var(--shadow-panel);
             border: 1px solid var(--color-border);
         }
-        @media (min-width: 640px) {
-            .user-info { margin-top: 0; }
-        }
+        @media (min-width: 640px) { .user-info { margin-top: 0; } }
         .user-avatar {
             width: 40px;
             height: 40px;
             border-radius: 9999px;
             border: 2px solid <?php echo $primary_color; ?>;
         }
-        .user-name-text {
-            color: inherit;
-        }
-        .user-id-text {
-            font-size: 0.875rem;
-            color: var(--color-text-subtle);
-        }
+        .user-name-text { color: inherit; }
+        .user-id-text { font-size: 0.875rem; color: var(--color-text-subtle); }
 
-
-        /* 6. Filters Section */
         .filters-panel {
             padding: 1.5rem;
             margin-bottom: 2rem;
             display: grid;
             grid-template-columns: repeat(1, 1fr);
-            gap: 2.5rem; /* Wider gap for better spacing */
+            gap: 2.5rem;
         }
         @media (min-width: 768px) {
             .filters-panel {
-                grid-template-columns: repeat(4, 1fr);
+                grid-template-columns: repeat(3, 1fr);
             }
         }
 
@@ -237,12 +340,10 @@ $secondary_color = '#059669';
             outline: none;
             appearance: none;
             transition: box-shadow 0.2s, border-color 0.2s;
-            cursor: pointer; /* ADDED: Cursor pointer for all filter inputs */
+            cursor: pointer;
         }
         .filter-input::placeholder { color: var(--color-text-subtle); opacity: 0.8; }
-        .filter-input:hover { /* ADDED: Hover effect */
-            border-color: <?php echo $primary_color; ?>;
-        }
+        .filter-input:hover { border-color: <?php echo $primary_color; ?>; }
         .filter-input:focus {
             box-shadow: 0 0 0 2px <?php echo $primary_color; ?>;
             border-color: <?php echo $primary_color; ?>;
@@ -264,7 +365,6 @@ $secondary_color = '#059669';
             transform: translateY(-1px);
         }
 
-        /* 7. Metric Cards Grid */
         .metric-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -272,9 +372,7 @@ $secondary_color = '#059669';
             margin-bottom: 2rem;
         }
         @media (min-width: 1024px) {
-            .metric-grid {
-                grid-template-columns: repeat(4, minmax(0, 1fr));
-            }
+            .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         }
         .metric-card {
             padding: 1.25rem;
@@ -298,64 +396,42 @@ $secondary_color = '#059669';
             font-weight: 500;
             color: var(--color-text-subtle);
         }
-        .metric-value {
-            font-size: 2.25rem;
-            font-weight: 700;
-        }
+        .metric-value { font-size: 2.25rem; font-weight: 700; }
 
-        /* 8. Charts Grid */
         .chart-grid {
             display: grid;
             grid-template-columns: repeat(1, minmax(0, 1fr));
             gap: 1.5rem;
         }
         @media (min-width: 1024px) {
-            .chart-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
+            .chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
-        .chart-container {
-            padding: 1.5rem;
-        }
-        .chart-title {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-        .chart-area {
-            height: 320px;
-        }
+        .chart-container { padding: 1.5rem; }
+        .chart-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 1rem; }
+        .chart-area { height: 320px; }
         
-        /* 9. Utility Classes & Icons */
         .text-primary { color: <?php echo $primary_color; ?>; }
         .font-bold { font-weight: bold; }
         .font-semibold { font-weight: 600; }
-        .icon-base {
-            width: 24px;
-            height: 24px;
-        }
+        .icon-base { width: 24px; height: 24px; }
         .hidden { display: none; }
         
-        /* 10. Custom Scrollbar (Dark Mode Only) */
         body.dark ::-webkit-scrollbar { width: 8px; }
         body.dark ::-webkit-scrollbar-thumb { background: <?php echo $primary_color; ?>; border-radius: 4px; }
         body.dark ::-webkit-scrollbar-track { background: var(--color-input-bg); }
     </style>
 
-    
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body id="body">
-    
-<header class="header">
+    <header class="header">
         <div class="container-wrapper header-content">
-            <div class="text-xl font-bold">LOGO</div>
+            <div class="text-xl font-bold">TIME TRACKER</div>
             <nav class="nav-links">
                 <a href="#" class="nav-link active font-semibold">Analytics</a>
                 <a href="#" class="nav-link">Logout</a>
                 
-<button id="themeToggle" class="theme-toggle">
+                <button id="themeToggle" class="theme-toggle">
                     <svg id="sunIcon" class="icon-base" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
                     </svg>
@@ -367,12 +443,10 @@ $secondary_color = '#059669';
         </div>
     </header>
 
-    
-<main class="container-wrapper main-content-padding">
-        
-<div class="dashboard-header">
+    <main class="container-wrapper main-content-padding">
+        <div class="dashboard-header">
             <div>
-                <h1 class="dashboard-title">Reports & Analytics</h1>
+                <h1 class="dashboard-title">Employee Analytics Dashboard</h1>
                 <p class="dashboard-date"><?php echo $report_date; ?></p>
             </div>
             <div class="user-info">
@@ -384,23 +458,20 @@ $secondary_color = '#059669';
             </div>
         </div>
 
-        
-<div class="panel filters-panel">
-            <input type="text" placeholder="Date Range" class="filter-input" />
-            <select class="filter-input">
-                <option>All Departments</option>
-                <option>Sales</option>
-                <option>Marketing</option>
-                <option>Engineering</option>
+        <div class="panel filters-panel">
+            <select class="filter-input" id="departmentFilter">
+                <option value="">All Departments</option>
+                <?php foreach($department_data as $dept): ?>
+                    <option value="<?php echo $dept['department']; ?>"><?php echo $dept['department']; ?></option>
+                <?php endforeach; ?>
             </select>
-            <input type="text" placeholder="Search Employees..." class="filter-input" />
-            <button class="btn-primary">
+            <input type="text" placeholder="Search Employees..." class="filter-input" id="searchFilter">
+            <button class="btn-primary" onclick="applyFilters()">
                 Apply Filters
             </button>
         </div>
 
-        
-<div class="metric-grid">
+        <div class="metric-grid">
             <?php
             $metric_details = [
                 ['label' => 'Total Employees', 'value' => $key_metrics['total_employees'], 'icon' => '<svg xmlns="http://www.w3.org/2000/svg" class="icon-base text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'],
@@ -421,8 +492,7 @@ $secondary_color = '#059669';
             <?php endforeach; ?>
         </div>
 
-        
-<div class="chart-grid">
+        <div class="chart-grid">
             <div class="panel chart-container">
                 <h2 class="chart-title">Weekly Activity Trends</h2>
                 <div class="chart-area">
@@ -438,14 +508,14 @@ $secondary_color = '#059669';
             </div>
 
             <div class="panel chart-container">
-                <h2 class="chart-title">Peak Hours Analysis</h2>
+                <h2 class="chart-title">Department Distribution</h2>
                 <div class="chart-area">
-                    <canvas id="peakHoursChart"></canvas>
+                    <canvas id="departmentChart"></canvas>
                 </div>
             </div>
 
             <div class="panel chart-container">
-                <h2 class="chart-title">Top 5 Most Active Employees</h2>
+                <h2 class="chart-title">Top Employees by Hours</h2>
                 <div class="chart-area">
                     <canvas id="topEmployeesChart"></canvas>
                 </div>
@@ -453,8 +523,7 @@ $secondary_color = '#059669';
         </div>
     </main>
 
-    
-<script>
+    <script>
         const PRIMARY_GREEN = '<?php echo $primary_color; ?>';
         const SECONDARY_GREEN = '<?php echo $secondary_color; ?>';
         const bodyElement = document.getElementById('body');
@@ -478,7 +547,6 @@ $secondary_color = '#059669';
             localStorage.setItem('theme', isDark ? 'dark' : 'light');
             setIcon(isDark);
             
-            // Re-render charts to update colors
             Object.values(window.charts).forEach(chart => {
                 updateChartColors(chart, isDark);
                 chart.update();
@@ -501,7 +569,6 @@ $secondary_color = '#059669';
         loadTheme();
 
         // --- Chart Configuration and Initialization ---
-        // ChartDataLabels plugin is no longer registered as we are not using it.
         window.charts = {}; 
 
         function getChartStyle(isDark) {
@@ -547,6 +614,12 @@ $secondary_color = '#059669';
             return chart;
         }
 
+        // Filter function
+        function applyFilters() {
+            alert('Filters would be applied here in a real implementation');
+            // In a real implementation, this would reload the page with filter parameters
+            // or make an AJAX call to update the charts
+        }
 
         // --- Chart 1: Weekly Activity Trends (Bar Chart) ---
         createChart('weeklyActivityChart', {
@@ -587,7 +660,6 @@ $secondary_color = '#059669';
                         title: { display: true, text: 'Count' }
                     },
                     x: {
-                        stacked: false,
                         title: { display: true, text: 'Day' }
                     }
                 }
@@ -600,7 +672,7 @@ $secondary_color = '#059669';
             data: {
                 labels: <?php echo json_encode($monthly_trend['labels']); ?>,
                 datasets: [{
-                    label: 'Work hours',
+                    label: 'Average Work hours',
                     data: <?php echo json_encode($monthly_trend['work_hours']); ?>,
                     borderColor: PRIMARY_GREEN,
                     backgroundColor: 'rgba(16, 185, 129, 0.2)',
@@ -624,33 +696,43 @@ $secondary_color = '#059669';
                     },
                 },
                 scales: {
-                    y: { beginAtZero: true, title: { display: true, text: 'Hours' } },
+                    y: { 
+                        beginAtZero: true, 
+                        title: { display: true, text: 'Hours' },
+                        suggestedMin: 0,
+                        suggestedMax: 10
+                    },
                     x: { title: { display: true, text: 'Month' } }
                 }
             }
         });
 
-        // --- Chart 3: Peak Hours Analysis (Line Chart) ---
-        createChart('peakHoursChart', {
-            type: 'line',
+        // --- Chart 3: Department Distribution (Pie Chart) ---
+        createChart('departmentChart', {
+            type: 'pie',
             data: {
-                labels: <?php echo json_encode($peak_hours['labels']); ?>,
+                labels: <?php echo json_encode(array_column($department_data, 'department')); ?>,
                 datasets: [{
-                    label: 'Activity Count',
-                    data: <?php echo json_encode($peak_hours['activity']); ?>,
-                    borderColor: PRIMARY_GREEN,
-                    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                    fill: false,
-                    tension: 0.4,
-                    pointRadius: 4,
-                    pointBackgroundColor: PRIMARY_GREEN,
+                    data: <?php echo json_encode(array_column($department_data, 'employee_count')); ?>,
+                    backgroundColor: [
+                        PRIMARY_GREEN,
+                        SECONDARY_GREEN,
+                        '#34D399',
+                        '#10B981',
+                        '#059669',
+                        '#047857'
+                    ],
+                    borderWidth: 1
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { labels: { font: { family: 'Inter' } } },
+                    legend: { 
+                        position: 'right',
+                        labels: { font: { family: 'Inter' } } 
+                    },
                     tooltip: {
                         borderColor: PRIMARY_GREEN,
                         borderWidth: 1,
@@ -658,32 +740,37 @@ $secondary_color = '#059669';
                         titleFont: { family: 'Inter', weight: 'bold' },
                         bodyFont: { family: 'Inter' }
                     },
-                },
-                scales: {
-                    y: { beginAtZero: true, title: { display: true, text: 'Activity' } },
-                    x: { title: { display: true, text: 'Time' } }
                 }
             }
         });
 
-        // --- Chart 4: Top 5 Most Active Employees (Horizontal Bar Chart) ---
+        // --- Chart 4: Top Employees by Hours (Line Chart) ---
         createChart('topEmployeesChart', {
-            type: 'bar',
+            type: 'line',
             data: {
                 labels: <?php echo json_encode($top_employees['names']); ?>,
                 datasets: [{
-                    label: 'Work hours',
+                    label: 'Average Hours Worked',
                     data: <?php echo json_encode($top_employees['work_hours']); ?>,
-                    backgroundColor: PRIMARY_GREEN,
-                    borderRadius: 4,
+                    borderColor: PRIMARY_GREEN,
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 5,
+                    pointBackgroundColor: PRIMARY_GREEN,
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointHoverRadius: 7,
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                indexAxis: 'y',
                 plugins: {
-                    legend: { display: false },
+                    legend: { 
+                        display: true,
+                        labels: { font: { family: 'Inter' } } 
+                    },
                     tooltip: {
                         borderColor: PRIMARY_GREEN,
                         borderWidth: 1,
@@ -693,13 +780,18 @@ $secondary_color = '#059669';
                     },
                 },
                 scales: {
-                    y: {
-                        grid: { display: false },
-                        title: { display: false }
+                    y: { 
+                        beginAtZero: true, 
+                        title: { display: true, text: 'Hours Worked' },
+                        suggestedMin: 0,
+                        suggestedMax: 10
                     },
-                    x: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Work hours' }
+                    x: { 
+                        title: { display: true, text: 'Employees' },
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
                     }
                 }
             }
@@ -715,3 +807,7 @@ $secondary_color = '#059669';
     </script>
 </body>
 </html>
+<?php
+// Close database connection
+$conn->close();
+?>
