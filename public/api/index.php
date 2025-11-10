@@ -1,5 +1,4 @@
 <?php
-
 /* 
     Attendance API entry point
  */
@@ -16,10 +15,11 @@ if (!isset($_SESSION['employee_id'])) {
 $employee_id = $_SESSION['employee_id'];
 
 $uri = explode('/', trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/'));
-$action = $uri[count($uri) - 1]; // e.g., weeklyReport
+$action = $uri[count($uri) - 1]; // e.g., weeklyReport, clock_in, clock_out
 $method = $_SERVER['REQUEST_METHOD'];
 
 // Example: /attendance_dashboard/public/api/attendance/weeklyReport
+// Example: /attendance_dashboard/public/api/attendance/clock_in
 if (isset($uri[3]) && $uri[3] === 'attendance') {
     AttendanceController::handleRequest($action, $method, $employee_id);
 } else {
