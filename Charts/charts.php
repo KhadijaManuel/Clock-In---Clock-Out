@@ -205,7 +205,6 @@ $secondary_color = '#059669';
     <title>Reports & Analytics Dashboard</title>
 
     <style>
-        /* Your existing CSS styles remain exactly the same */
         :root {
             --color-bg-body: #F4F5F7;
             --color-bg-header: #FFFFFF;
@@ -617,8 +616,6 @@ $secondary_color = '#059669';
         // Filter function
         function applyFilters() {
             alert('Filters would be applied here in a real implementation');
-            // In a real implementation, this would reload the page with filter parameters
-            // or make an AJAX call to update the charts
         }
 
         // --- Chart 1: Weekly Activity Trends (Bar Chart) ---
