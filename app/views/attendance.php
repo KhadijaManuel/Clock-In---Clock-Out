@@ -2,7 +2,7 @@
 session_start();
 
 // For testing: pretend you’re logged in as employee 1
-//$_SESSION['employee_id'] = 1;
+$_SESSION['employee_id'] = 1;
 
 //if (!isset($_SESSION['employee_id'])) {
   //  header("Location: login.php");
