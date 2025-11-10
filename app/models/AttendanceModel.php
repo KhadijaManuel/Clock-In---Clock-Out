@@ -5,7 +5,7 @@
     for weekly activity data using the MySQL Database.
 */
 
-require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../../includes/db.php';
 
 class AttendanceModel {
     public static function getWeeklyActivity($employee_id) {
