@@ -4,7 +4,7 @@
     connects model and the API
 */
 
-require_once __DIR__ . '/../../models/AttendanceModel.php';
+require_once __DIR__ . '/../models/AttendanceModel.php';
 
 class AttendanceController {
     public static function getWeeklyReport($employee_id) {
