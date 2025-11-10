@@ -12,7 +12,7 @@ if (!isset($_SESSION['employee_id'])) {
     exit();
 }
 
-$employee_id = $_SESSION['employee_id'] = 1;
+$employee_id = $_SESSION['employee_id'];
 
 $uri = explode('/', trim(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/'));
 $action = $uri[count($uri) - 1]; // e.g., weeklyReport, clock_in, clock_out
