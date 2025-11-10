@@ -12,9 +12,9 @@ if (!isset($_SESSION['employee_id'])) {
 }
 $employee_id = $_SESSION['employee_id'];
 
-require_once __DIR__ . '/../includes/header.php';
+require_once __DIR__ . '/../../includes/header.php';
 require_once __DIR__ . '/../controllers/AttendanceController.php';
-require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../../includes/db.php';
 
 // Attendance Page - PHP version
 // Sample notifications (same as Vue setup)
