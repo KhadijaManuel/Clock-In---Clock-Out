@@ -45,7 +45,7 @@ define('DB_NAME', getenv('DB_NAME') ?: 'tracker_db');
 
 // App Settings
 define('APP_NAME', getenv('APP_NAME') ?: 'Clock It - Attendance Tracker');
-define('BASE_URL', getenv('BASE_URL') ?: '/Weekly-Report-Backend/public');
+define('BASE_URL', getenv('BASE_URL') ?: '/Weekly-Report-Backend/app/views');
 
 // Timezone
 date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Africa/Johannesburg');
