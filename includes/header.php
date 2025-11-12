@@ -1065,7 +1065,7 @@ class TopHeader {
     <div class="logo-placeholder" onclick="goToDashboard()">
         <div class="logo-image">
             <div class="logo-icon">
-                <img src="../../public/assets/images/project.png" alt="logo" class="logo-img">
+                <img src="/Clock-In---Clock-Out/public/assets/images/project.png" alt="logo" class="logo-img">
             </div>
         </div>
     </div>
