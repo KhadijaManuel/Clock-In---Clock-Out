@@ -1,5 +1,5 @@
 RewriteEngine On
-RewriteBase /attendance_dashboard/public/
+RewriteBase /Clock-In---Clock-Out/public/
 
 # Route all /api/... calls to the API index
 RewriteCond %{REQUEST_FILENAME} !-f
