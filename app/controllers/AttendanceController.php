@@ -11,12 +11,40 @@ class AttendanceController {
         return AttendanceModel::getWeeklyActivity($employee_id);
     }
 
-    // For API endpoint (JSON response)
+    public static function clockIn($employee_id) {
+        return AttendanceModel::clockIn($employee_id);
+    }
+
+    public static function clockOut($employee_id) {
+        return AttendanceModel::clockOut($employee_id);
+    }
+
+    // API Endpoint handler
     public static function handleRequest($action, $method, $employee_id) {
-        if ($action === 'weeklyReport' && $method === 'GET') {
-            $data = self::getWeeklyReport($employee_id);
-            header('Content-Type: application/json');
-            echo json_encode($data);
+        header('Content-Type: application/json');
+
+        switch ($action) {
+            case 'weeklyReport':
+                if ($method === 'GET') {
+                    echo json_encode(self::getWeeklyReport($employee_id));
+                }
+                break;
+
+            case 'clockIn':
+                if ($method === 'POST') {
+                    echo json_encode(self::clockIn($employee_id));
+                }
+                break;
+
+            case 'clockOut':
+                if ($method === 'POST') {
+                    echo json_encode(self::clockOut($employee_id));
+                }
+                break;
+
+            default:
+                echo json_encode(['error' => 'Invalid action']);
         }
     }
 }
+
