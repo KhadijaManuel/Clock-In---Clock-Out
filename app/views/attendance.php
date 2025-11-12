@@ -1,23 +1,57 @@
 <?php
-// Prevent caching
-header("Cache-Control: no-cache, no-store, must-revalidate");
-header("Pragma: no-cache");
-header("Expires: 0");
+require_once __DIR__ . '/../../includes/config.php';
 
-session_start();
-
-// Fix the employee_id error
+// Set employee_id for testing
 if (!isset($_SESSION['employee_id'])) {
-    $_SESSION['employee_id'] = 1; // Set default employee ID for testing
+    $_SESSION['employee_id'] = 1;
 }
+
 $employee_id = $_SESSION['employee_id'];
 
+// Handle form submission for clock in/out - MUST BE BEFORE ANY HTML OUTPUT
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    require_once __DIR__ . '/../controllers/AttendanceController.php';
+    
+    $action = $_POST['action'];
+    
+    if ($action === 'clockIn') {
+        $result = AttendanceController::clockIn($employee_id);
+        $_SESSION['message'] = $result['message'];
+        $_SESSION['message_type'] = $result['status'];
+    } else if ($action === 'clockOut') {
+        $result = AttendanceController::clockOut($employee_id);
+        $_SESSION['message'] = $result['message'];
+        $_SESSION['message_type'] = $result['status'];
+    }
+    
+    // Redirect to refresh the page and show updated data
+    header("Location: " . $_SERVER['PHP_SELF']);
+    exit();
+}
+
+// Now include the header and other files AFTER handling the POST request
 require_once __DIR__ . '/../../includes/header.php';
 require_once __DIR__ . '/../controllers/AttendanceController.php';
-require_once __DIR__ . '/../../includes/db.php';
 
-// Attendance Page - PHP version
-// Sample notifications (same as Vue setup)
+// Check if user is currently clocked in (for button display)
+$isClockedIn = false;
+try {
+    $db = Database::getInstance()->getConnection();
+    $today = date('Y-m-d');
+    $stmt = $db->prepare("SELECT record_id FROM record_backups WHERE employee_id = ? AND date = ? AND clockout_time IS NULL");
+    $stmt->bind_param("is", $employee_id, $today);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $isClockedIn = $result->num_rows > 0;
+    $stmt->close();
+} catch (Exception $e) {
+    error_log("Error checking clock status: " . $e->getMessage());
+}
+
+// Get weekly activities
+$weeklyActivities = AttendanceController::getWeeklyReport($employee_id);
+
+// Sample notifications
 $notifications = [
     ["title" => "System Update Completed", "message" => "The attendance system has been successfully updated to version 2.3.", "time" => "2 mins ago", "read" => false],
     ["title" => "Clock Out Reminder", "message" => "You haven't clocked out yet. Please remember to clock out before leaving.", "time" => "5 mins ago", "read" => false],
@@ -25,38 +59,8 @@ $notifications = [
     ["title" => "Clock-In Successful", "message" => "You clocked in successfully at 08:01 AM. Have a productive day!", "time" => "Yesterday", "read" => true],
     ["title" => "Attendance Approved", "message" => "Your attendance record for 28 October has been verified by the admin.", "time" => "Yesterday", "read" => false]
 ];
-
-// Weekly Activities generator
-function generateWeeklyData()
-{
-    $days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-    $today = new DateTime();
-    $startOfWeek = clone $today;
-    $dayNum = (int) $today->format("w");
-    $startOfWeek->modify('-' . ($dayNum == 0 ? 6 : $dayNum - 1) . ' days');
-    $data = [];
-    for ($i = 0; $i < 7; $i++) {
-        $date = clone $startOfWeek;
-        $date->modify("+$i days");
-        $clockInHour = rand(7, 9);
-        $clockInMinute = rand(0, 59);
-        $clockOutHour = rand(16, 18);
-        $clockOutMinute = rand(0, 59);
-        $clockIn = str_pad($clockInHour, 2, '0', STR_PAD_LEFT) . ':' . str_pad($clockInMinute, 2, '0', STR_PAD_LEFT);
-        $clockOut = str_pad($clockOutHour, 2, '0', STR_PAD_LEFT) . ':' . str_pad($clockOutMinute, 2, '0', STR_PAD_LEFT);
-        $hoursWorkedCalc = $clockOutHour - $clockInHour + ($clockOutMinute - $clockInMinute) / 60;
-        $data[] = [
-            "date" => $date->format("m/d/Y"),
-            "day" => $days[$i],
-            "clockIn" => $clockIn,
-            "clockOut" => $clockOut,
-            "hours" => round($hoursWorkedCalc, 1) . 'h'
-        ];
-    }
-    return $data;
-}
-
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 
@@ -65,6 +69,7 @@ function generateWeeklyData()
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Attendance Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;">
     <style>
         :root {
             --header-bg: #06C3A7;
@@ -80,6 +85,7 @@ function generateWeeklyData()
             --border-color: rgba(6, 195, 167, 0.3);
         }
 
+        /* :crescent_moon: Dark Mode */
         [data-theme="dark"] {
             --header-bg: #243238;
             --button-text: #EBFFFD;
@@ -94,6 +100,7 @@ function generateWeeklyData()
             --border-color: rgba(235, 255, 253, 0.2);
         }
 
+        /* Apply globally */
         body {
             margin: 0;
             padding: 0;
@@ -106,6 +113,43 @@ function generateWeeklyData()
             transition: all 0.3s ease;
         }
 
+        /* Message styles */
+        .message {
+            padding: 12px 20px 12px 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: 500;
+            position: relative;
+        }
+
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+    .close-btn {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 18px;
+    font-weight: bold;
+    color: #555;
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+.close-btn:hover {
+    color: #000;
+}
+
+        /* attendance styles */
         .attendance-dashboard {
             min-height: 100vh;
             font-family: 'Poppins', sans-serif;
@@ -125,6 +169,7 @@ function generateWeeklyData()
             width: 100%;
         }
 
+        /* :white_check_mark: FIXED GRID */
         .cards-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -133,6 +178,7 @@ function generateWeeklyData()
             width: 100%;
         }
 
+        /* :white_check_mark: FIXED CARD */
         .card {
             background: var(--bg-card);
             border-radius: 12px;
@@ -146,6 +192,7 @@ function generateWeeklyData()
             overflow: hidden;
         }
 
+        /* Card headings */
         .card h2 {
             margin: 0 0 1rem 0;
             color: var(--accent-color);
@@ -153,6 +200,7 @@ function generateWeeklyData()
             font-weight: 600;
         }
 
+        /* Timer Section */
         .timer-container {
             width: 100%;
             margin: 0 auto 1rem;
@@ -205,6 +253,7 @@ function generateWeeklyData()
             line-height: 1.3;
         }
 
+        /* Clock button styles */
         .clock-button {
             background-color: var(--accent-color);
             color: white;
@@ -237,6 +286,7 @@ function generateWeeklyData()
             box-shadow: 0 4px 12px rgba(255, 92, 92, 0.4);
         }
 
+        /* Activity table */
         .activity-card {
             display: flex;
             flex-direction: column;
@@ -273,11 +323,17 @@ function generateWeeklyData()
             color: #06C3A7;
         }
 
+        .activity-table tbody tr:hover {
+            background-color: rgba(6, 195, 167, 0.05);
+        }
+
+        /* Highlight today's row */
         .today-row {
             background-color: rgba(6, 195, 167, 0.1);
             font-weight: 600;
         }
 
+        /* Notification Panel */
         .notification-panel-wrapper {
             display: flex;
             justify-content: center;
@@ -415,17 +471,25 @@ function generateWeeklyData()
             margin-top: 10px;
             color: var(--subtext-color);
         }
-
-        .loading {
-            opacity: 0.6;
-            pointer-events: none;
-        }
     </style>
 </head>
 
 <body>
     <div class="attendance-dashboard">
         <h1>Attendance</h1>
+        
+        <!-- Display messages -->
+        <?php if (isset($_SESSION['message'])): ?>
+            <div class="message <?php echo $_SESSION['message_type'] === 'success' ? 'success' : 'error'; ?>">
+                <span class="close-btn" onclick="this.parentElement.style.display='none';">&times;</span>
+                <?php 
+                echo htmlspecialchars($_SESSION['message']);
+                unset($_SESSION['message']);
+                unset($_SESSION['message_type']);
+                ?>
+            </div>
+        <?php endif; ?>
+&nbsp;
         <main class="main-content">
             <!-- Cards Grid -->
             <div class="cards-grid">
@@ -442,11 +506,17 @@ function generateWeeklyData()
                             </svg>
                             <div class="timer-content">
                                 <div class="timer-display" id="timer-display">00h 00m 00s</div>
-                                <button class="clock-button" id="clock-button">Clock In</button>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="action" value="<?php echo $isClockedIn ? 'clockOut' : 'clockIn'; ?>">
+                                    <button type="submit" class="clock-button <?php echo $isClockedIn ? 'clocked-in' : ''; ?>" id="clock-button">
+                                        <?php echo $isClockedIn ? 'Clock Out' : 'Clock In'; ?>
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     </div>
                 </div>
+
                 <!-- Right Card - Weekly Activity -->
                 <div class="card activity-card">
                     <h2>Weekly Activity</h2>
@@ -462,101 +532,21 @@ function generateWeeklyData()
                                 </tr>
                             </thead>
                             <tbody id="activity-table-body">
-                                <?php 
-                                // Get fresh data from database every time
-                                try {
-                                    $db = Database::getInstance();
-                                    
-                                    // Get current week dates
-                                    $today = new DateTime();
-                                    $startOfWeek = clone $today;
-                                    $startOfWeek->modify('Monday this week');
-                                    $endOfWeek = clone $startOfWeek;
-                                    $endOfWeek->modify('+6 days');
-                                    
-                                    // Get fresh records for this week - no caching
-                                    $sql = "SELECT date, clockin_time, clockout_time 
-                                            FROM record_backups 
-                                            WHERE employee_id = ? 
-                                            AND date BETWEEN ? AND ?
-                                            ORDER BY date DESC";
-                                    
-                                    $records = $db->query($sql, [
-                                        $employee_id, 
-                                        $startOfWeek->format('Y-m-d'), 
-                                        $endOfWeek->format('Y-m-d')
-                                    ]);
-                                    
-                                    $days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-                                    
-                                    // Generate rows for each day of the week
-                                    for ($i = 0; $i < 7; $i++) {
-                                        $currentDate = clone $startOfWeek;
-                                        $currentDate->modify("+$i days");
-                                        $dateFormatted = $currentDate->format('m/d/Y');
-                                        $dateDbFormat = $currentDate->format('Y-m-d');
-                                        $dayName = $days[$i];
-                                        
-                                        // Check if we have a record for this date
-                                        $record = null;
-                                        foreach ($records as $r) {
-                                            if ($r['date'] == $dateDbFormat) {
-                                                $record = $r;
-                                                break;
-                                            }
-                                        }
-                                        
-                                        $isToday = $dateFormatted === date('m/d/Y');
-                                        $clockIn = '--:--';
-                                        $clockOut = '--:--';
-                                        $hours = '0h';
-                                        
-                                        if ($record) {
-                                            if ($record['clockin_time']) {
-                                                $clockIn = date('H:i', strtotime($record['clockin_time']));
-                                            }
-                                            if ($record['clockout_time']) {
-                                                $clockOut = date('H:i', strtotime($record['clockout_time']));
-                                                
-                                                // Calculate hours worked
-                                                if ($record['clockin_time']) {
-                                                    $start = DateTime::createFromFormat('H:i:s', $record['clockin_time']);
-                                                    $end = DateTime::createFromFormat('H:i:s', $record['clockout_time']);
-                                                    $diff = $end->diff($start);
-                                                    $totalHours = $diff->h + ($diff->i / 60);
-                                                    $hours = round($totalHours, 1) . 'h';
-                                                }
-                                            }
-                                        }
-                                        
-                                        echo "<tr class='" . ($isToday ? 'today-row' : '') . "'>";
-                                        echo "<td>{$dateFormatted}</td>";
-                                        echo "<td>{$dayName}</td>";
-                                        echo "<td>{$clockIn}</td>";
-                                        echo "<td>{$clockOut}</td>";
-                                        echo "<td>{$hours}</td>";
-                                        echo "</tr>";
-                                    }
-                                    
-                                } catch (Exception $e) {
-                                    // Fallback to sample data if database fails
-                                    $sampleData = generateWeeklyData();
-                                    foreach ($sampleData as $activity) {
-                                        echo "<tr class='" . ($activity['date'] === date('m/d/Y') ? 'today-row' : '') . "'>";
-                                        echo "<td>{$activity['date']}</td>";
-                                        echo "<td>{$activity['day']}</td>";
-                                        echo "<td>{$activity['clockIn']}</td>";
-                                        echo "<td>{$activity['clockOut']}</td>";
-                                        echo "<td>{$activity['hours']}</td>";
-                                        echo "</tr>";
-                                    }
-                                }
-                                ?>
+                                <?php foreach ($weeklyActivities as $activity): ?>
+                                    <tr class="<?= $activity['date'] === date('m/d/Y') ? 'today-row' : '' ?>">
+                                        <td><?= htmlspecialchars($activity['date']) ?></td>
+                                        <td><?= htmlspecialchars($activity['day']) ?></td>
+                                        <td><?= htmlspecialchars($activity['clockIn']) ?></td>
+                                        <td><?= htmlspecialchars($activity['clockOut']) ?></td>
+                                        <td><?= htmlspecialchars($activity['hours']) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
+
             <!-- Notification Panel spanning the grid width -->
             <div class="notification-panel-wrapper">
                 <div class="notification-panel">
@@ -564,19 +554,19 @@ function generateWeeklyData()
                         <h4>Notifications</h4>
                     </div>
                     <div class="tabs">
-                        <button class="active" onclick="showTab('All')">All</button>
-                        <button onclick="showTab('Read')">Read</button>
-                        <button onclick="showTab('Unread')">Unread</button>
+                        <button class="active" onclick="showTab('All')" aria-label="Show all notifications">All</button>
+                        <button onclick="showTab('Read')" aria-label="Show read notifications">Read</button>
+                        <button onclick="showTab('Unread')" aria-label="Show unread notifications">Unread</button>
                     </div>
                     <ul class="notification-list" id="notification-list">
                         <?php foreach ($notifications as $note): ?>
                             <li class="notification-item <?= $note['read'] ? '' : 'is-unread' ?>" onclick="markRead(this)">
                                 <div class="icon-wrap"><i class="fas fa-bell"></i></div>
                                 <div class="details">
-                                    <p class="title"><?= $note['title'] ?></p>
-                                    <p class="message"><?= $note['message'] ?></p>
+                                    <p class="title"><?= htmlspecialchars($note['title']) ?></p>
+                                    <p class="message"><?= htmlspecialchars($note['message']) ?></p>
                                 </div>
-                                <span class="time"><?= $note['time'] ?></span>
+                                <span class="time"><?= htmlspecialchars($note['time']) ?></span>
                                 <?php if (!$note['read']): ?><span class="unread-dot"></span><?php endif; ?>
                             </li>
                         <?php endforeach; ?>
@@ -585,130 +575,74 @@ function generateWeeklyData()
             </div>
         </main>
     </div>
+
     <script>
-        // Timer JS
-        let secondsWorked = 0;
-        let isClockedIn = false;
-        const timerDisplay = document.getElementById('timer-display');
-        const progressCircle = document.getElementById('progress-circle');
-        const clockButton = document.getElementById('clock-button');
+    /* ---------------- Timer Functionality Only ---------------- */
+    let secondsWorked = 0;
+    let isClockedIn = <?php echo $isClockedIn ? 'true' : 'false'; ?>;
+    let clockInTime = null;
 
-        // Check current clock status on page load
-        function checkClockStatus() {
-            fetch('../../public/api/clock_handler.php?action=check_status')
-            .then(response => response.json())
-            .then(data => {
-                if (data.clocked_in) {
-                    isClockedIn = true;
-                    clockButton.textContent = 'Clock Out';
-                    clockButton.classList.add('clocked-in');
-                    
-                    // Calculate elapsed time since clock in
-                    if (data.clock_in_time) {
-                        const clockInTime = new Date('<?= date('Y-m-d') ?>T' + data.clock_in_time);
-                        const now = new Date();
-                        secondsWorked = Math.floor((now - clockInTime) / 1000);
-                    }
-                }
-            })
-            .catch(error => {
-                console.log('Could not check clock status');
-            });
-        }
+    const timerDisplay = document.getElementById('timer-display');
+    const progressCircle = document.getElementById('progress-circle');
 
-        // Initialize clock status
-        checkClockStatus();
+    /* Update timer display */
+    function updateTimer() {
+        const h = Math.floor(secondsWorked / 3600);
+        const m = Math.floor((secondsWorked % 3600) / 60);
+        const s = secondsWorked % 60;
+        timerDisplay.innerText = `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
 
-        function updateTimer() {
-            const h = Math.floor(secondsWorked / 3600);
-            const m = Math.floor((secondsWorked % 3600) / 60);
-            const s = secondsWorked % 60;
-            timerDisplay.innerText = `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+        const circumference = 2 * Math.PI * 125;
+        const totalSeconds = 8 * 3600;
+        const progress = Math.min((secondsWorked / totalSeconds) * circumference, circumference);
+        progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
+        progressCircle.style.strokeDashoffset = circumference - progress;
 
-            const circumference = 2 * Math.PI * 125;
-            const totalSeconds = 8 * 3600;
-            const progress = Math.min((secondsWorked / totalSeconds) * circumference, circumference);
-            progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
-            progressCircle.style.strokeDashoffset = circumference - progress;
+        if (isClockedIn) secondsWorked++;
+    }
 
-            if (isClockedIn) {
-                secondsWorked++;
-            }
-        }
+    /* Utility functions for notifications */
+    function formatTime(date) {
+        const h = String(date.getHours()).padStart(2,'0');
+        const m = String(date.getMinutes()).padStart(2,'0');
+        return `${h}:${m}`;
+    }
 
-        // SIMPLE Clock in/out functionality
-        clockButton.addEventListener('click', function () {
-            // Prevent multiple clicks
-            if (clockButton.classList.contains('loading')) return;
-            
-            clockButton.classList.add('loading');
-            clockButton.disabled = true;
+    function calculateHours(clockIn, clockOut) {
+        const diff = (clockOut - clockIn) / 3600000;
+        return `${diff.toFixed(1)}h`;
+    }
 
-            if (!isClockedIn) {
-                // Clock in
-                const currentTime = new Date();
-                
-                fetch('../../public/api/clock_handler.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `action=clock_in&clock_time=${currentTime.toISOString()}`
-                })
-                .then(response => response.json())
-                .then(data => {
-                    clockButton.classList.remove('loading');
-                    clockButton.disabled = false;
-                    
-                    if (data.success) {
-                        alert('Clocked in successfully!');
-                        location.reload();
-                    } else {
-                        alert('Error: ' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    clockButton.classList.remove('loading');
-                    clockButton.disabled = false;
-                    alert('Error clocking in');
-                });
+    /* Notifications */
+    function addNotification(title, message) {
+        const list = document.getElementById('notification-list');
+        const item = document.createElement('li');
+        item.className = 'notification-item is-unread';
+        item.onclick = function() { markRead(this); };
+        item.innerHTML = `
+            <div class="icon-wrap"><i class="fas fa-bell"></i></div>
+            <div class="details">
+                <p class="title">${title}</p>
+                <p class="message">${message}</p>
+            </div>
+            <span class="time">Just now</span>
+            <span class="unread-dot"></span>`;
+        list.prepend(item);
+    }
 
-            } else {
-                // Clock out
-                const clockOutTime = new Date();
-                
-                fetch('../../public/api/clock_handler.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `action=clock_out&clock_time=${clockOutTime.toISOString()}`
-                })
-                .then(response => response.json())
-                .then(data => {
-                    clockButton.classList.remove('loading');
-                    clockButton.disabled = false;
-                    
-                    if (data.success) {
-                        alert('Clocked out successfully!');
-                        location.reload();
-                    } else {
-                        alert('Error: ' + data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    clockButton.classList.remove('loading');
-                    clockButton.disabled = false;
-                    alert('Error clocking out');
-                });
-            }
-        });
+    function markRead(el) {
+        el.classList.remove('is-unread');
+        const dot = el.querySelector('.unread-dot');
+        if (dot) dot.remove();
+    }
 
-        // Start the timer
-        setInterval(updateTimer, 1000);
+    function showTab(tab) { 
+        console.log('Tab clicked:', tab); 
+    }
+
+    /* Start timer */
+    setInterval(updateTimer, 1000);
+    
     </script>
 </body>
-
 </html>
