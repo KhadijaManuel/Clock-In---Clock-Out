@@ -1,66 +1,81 @@
 <?php
-require_once __DIR__ . '/../../includes/config.php';
 
-// Set employee_id for testing
+session_start();
+
+// Check login status FIRST
 if (!isset($_SESSION['employee_id'])) {
-    $_SESSION['employee_id'] = 1;
+    header('Location: login.php');
+    exit;
 }
-
+// Attendance Page - PHP version
+// Sample notifications (same as Vue setup)
 $employee_id = $_SESSION['employee_id'];
+$employee_name = $_SESSION['name'];
 
-// Handle form submission for clock in/out - MUST BE BEFORE ANY HTML OUTPUT
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    require_once __DIR__ . '/../controllers/AttendanceController.php';
-    
-    $action = $_POST['action'];
-    
-    if ($action === 'clockIn') {
-        $result = AttendanceController::clockIn($employee_id);
-        $_SESSION['message'] = $result['message'];
-        $_SESSION['message_type'] = $result['status'];
-    } else if ($action === 'clockOut') {
-        $result = AttendanceController::clockOut($employee_id);
-        $_SESSION['message'] = $result['message'];
-        $_SESSION['message_type'] = $result['status'];
+// DEBUG: Check what employee ID we have
+error_log("Logged in as employee_id: " . $employee_id . ", name: " . $employee_name);
+
+// Get notifications from backend
+$apiUrl = "http://localhost/php-notif/public/api/index.php/notifications/getNotifications?employee_id=" . $employee_id;
+$response = @file_get_contents($apiUrl);
+if ($response === FALSE) {
+    $notifications = [];
+} else {
+    $data = json_decode($response, true);
+    $notifications = $data['notifications'] ?? [];
+}
+
+// DEBUG: Check what notifications we received
+error_log("Received " . count($notifications) . " notifications");
+foreach ($notifications as $note) {
+    error_log("Notification: " . $note['title'] . " - Employee ID: " . ($note['employee_id'] ?? 'NULL'));
+}
+
+// Weekly Activities generator
+function generateWeeklyData()
+{
+    $days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    $today = new DateTime();
+    $startOfWeek = clone $today;
+    $dayNum = (int) $today->format("w");
+    $startOfWeek->modify('-' . ($dayNum == 0 ? 6 : $dayNum - 1) . ' days');
+    $data = [];
+    for ($i = 0; $i < 7; $i++) {
+        $date = clone $startOfWeek;
+        $date->modify("+$i days");
+        $clockInHour = rand(7, 9);
+        $clockInMinute = rand(0, 59);
+        $clockOutHour = rand(16, 18);
+        $clockOutMinute = rand(0, 59);
+        $clockIn = str_pad($clockInHour, 2, '0', STR_PAD_LEFT) . ':' . str_pad($clockInMinute, 2, '0', STR_PAD_LEFT);
+        $clockOut = str_pad($clockOutHour, 2, '0', STR_PAD_LEFT) . ':' . str_pad($clockOutMinute, 2, '0', STR_PAD_LEFT);
+        $hoursWorkedCalc = $clockOutHour - $clockInHour + ($clockOutMinute - $clockInMinute) / 60;
+        $data[] = [
+            "date" => $date->format("m/d/Y"),
+            "day" => $days[$i],
+            "clockIn" => $clockIn,
+            "clockOut" => $clockOut,
+            "hours" => round($hoursWorkedCalc, 1) . 'h'
+        ];
     }
-    
-    // Redirect to refresh the page and show updated data
-    header("Location: " . $_SERVER['PHP_SELF']);
-    exit();
+    return $data;
 }
+$weeklyActivities = generateWeeklyData();
 
-// Now include the header and other files AFTER handling the POST request
-require_once __DIR__ . '/../../includes/header.php';
-require_once __DIR__ . '/../controllers/AttendanceController.php';
-
-// Check if user is currently clocked in (for button display)
-$isClockedIn = false;
-try {
-    $db = Database::getInstance()->getConnection();
-    $today = date('Y-m-d');
-    $stmt = $db->prepare("SELECT record_id FROM record_backups WHERE employee_id = ? AND date = ? AND clockout_time IS NULL");
-    $stmt->bind_param("is", $employee_id, $today);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $isClockedIn = $result->num_rows > 0;
-    $stmt->close();
-} catch (Exception $e) {
-    error_log("Error checking clock status: " . $e->getMessage());
-}
-
-// Get weekly activities
-$weeklyActivities = AttendanceController::getWeeklyReport($employee_id);
-
-// Sample notifications
-$notifications = [
-    ["title" => "System Update Completed", "message" => "The attendance system has been successfully updated to version 2.3.", "time" => "2 mins ago", "read" => false],
-    ["title" => "Clock Out Reminder", "message" => "You haven't clocked out yet. Please remember to clock out before leaving.", "time" => "5 mins ago", "read" => false],
-    ["title" => "Holiday Notice", "message" => "The office will be closed on 16 December for a public holiday.", "time" => "10:24 am", "read" => true],
-    ["title" => "Clock-In Successful", "message" => "You clocked in successfully at 08:01 AM. Have a productive day!", "time" => "Yesterday", "read" => true],
-    ["title" => "Attendance Approved", "message" => "Your attendance record for 28 October has been verified by the admin.", "time" => "Yesterday", "read" => false]
+// Prepare user data for header
+$user = [
+    'firstName' => $employee_name,
+    'lastName' => '',
+    'email' => $_SESSION['email'] ?? '',
+    'contactNo' => $_SESSION['contactNo'] ?? '',
+    'department' => $_SESSION['department'] ?? 'Administration', 
+    'position' => $_SESSION['position'] ?? 'Employee',
+    'employeeId' => $employee_id
 ];
-?>
 
+include  __DIR__ . '/../includes/header.php';
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -69,7 +84,6 @@ $notifications = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Attendance Dashboard</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;">
     <style>
         :root {
             --header-bg: #06C3A7;
@@ -105,6 +119,7 @@ $notifications = [
             margin: 0;
             padding: 0;
             font-family: "Inter", sans-serif;
+            /* background-color: var(--bg-color); */
             color: var(--text-color);
             transition: background-color 0.4s ease, color 0.4s ease;
         }
@@ -113,45 +128,10 @@ $notifications = [
             transition: all 0.3s ease;
         }
 
-        /* Message styles */
-        .message {
-            padding: 12px 20px 12px 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            font-weight: 500;
-            position: relative;
-        }
-
-        .message.success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .message.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-    .close-btn {
-    position: absolute;
-    top: 8px;
-    right: 12px;
-    font-size: 18px;
-    font-weight: bold;
-    color: #555;
-    cursor: pointer;
-    transition: color 0.3s ease;
-}
-
-.close-btn:hover {
-    color: #000;
-}
-
         /* attendance styles */
         .attendance-dashboard {
             min-height: 100vh;
+            /* background-color: var(--bg-color); */
             font-family: 'Poppins', sans-serif;
             padding: 1rem;
         }
@@ -298,6 +278,7 @@ $notifications = [
             flex-grow: 1;
             overflow: auto;
             max-height: 250px;
+            /* :white_check_mark: optional: keeps long tables scrollable */
         }
 
         .activity-table {
@@ -324,7 +305,7 @@ $notifications = [
         }
 
         .activity-table tbody tr:hover {
-            background-color: rgba(6, 195, 167, 0.05);
+            /* background-color: var(--input-bg); */
         }
 
         /* Highlight today's row */
@@ -477,19 +458,6 @@ $notifications = [
 <body>
     <div class="attendance-dashboard">
         <h1>Attendance</h1>
-        
-        <!-- Display messages -->
-        <?php if (isset($_SESSION['message'])): ?>
-            <div class="message <?php echo $_SESSION['message_type'] === 'success' ? 'success' : 'error'; ?>">
-                <span class="close-btn" onclick="this.parentElement.style.display='none';">&times;</span>
-                <?php 
-                echo htmlspecialchars($_SESSION['message']);
-                unset($_SESSION['message']);
-                unset($_SESSION['message_type']);
-                ?>
-            </div>
-        <?php endif; ?>
-&nbsp;
         <main class="main-content">
             <!-- Cards Grid -->
             <div class="cards-grid">
@@ -506,17 +474,11 @@ $notifications = [
                             </svg>
                             <div class="timer-content">
                                 <div class="timer-display" id="timer-display">00h 00m 00s</div>
-                                <form method="POST" style="display: inline;">
-                                    <input type="hidden" name="action" value="<?php echo $isClockedIn ? 'clockOut' : 'clockIn'; ?>">
-                                    <button type="submit" class="clock-button <?php echo $isClockedIn ? 'clocked-in' : ''; ?>" id="clock-button">
-                                        <?php echo $isClockedIn ? 'Clock Out' : 'Clock In'; ?>
-                                    </button>
-                                </form>
+                                <button class="clock-button" id="clock-button">Clock In</button>
                             </div>
                         </div>
                     </div>
                 </div>
-
                 <!-- Right Card - Weekly Activity -->
                 <div class="card activity-card">
                     <h2>Weekly Activity</h2>
@@ -534,11 +496,11 @@ $notifications = [
                             <tbody id="activity-table-body">
                                 <?php foreach ($weeklyActivities as $activity): ?>
                                     <tr class="<?= $activity['date'] === date('m/d/Y') ? 'today-row' : '' ?>">
-                                        <td><?= htmlspecialchars($activity['date']) ?></td>
-                                        <td><?= htmlspecialchars($activity['day']) ?></td>
-                                        <td><?= htmlspecialchars($activity['clockIn']) ?></td>
-                                        <td><?= htmlspecialchars($activity['clockOut']) ?></td>
-                                        <td><?= htmlspecialchars($activity['hours']) ?></td>
+                                        <td><?= $activity['date'] ?></td>
+                                        <td><?= $activity['day'] ?></td>
+                                        <td><?= $activity['clockIn'] ?></td>
+                                        <td><?= $activity['clockOut'] ?></td>
+                                        <td><?= $activity['hours'] ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -546,7 +508,6 @@ $notifications = [
                     </div>
                 </div>
             </div>
-
             <!-- Notification Panel spanning the grid width -->
             <div class="notification-panel-wrapper">
                 <div class="notification-panel">
@@ -554,95 +515,250 @@ $notifications = [
                         <h4>Notifications</h4>
                     </div>
                     <div class="tabs">
-                        <button class="active" onclick="showTab('All')" aria-label="Show all notifications">All</button>
-                        <button onclick="showTab('Read')" aria-label="Show read notifications">Read</button>
-                        <button onclick="showTab('Unread')" aria-label="Show unread notifications">Unread</button>
+                        <button class="active" onclick="showTab('All')">All</button>
+                        <button onclick="showTab('Read')">Read</button>
+                        <button onclick="showTab('Unread')">Unread</button>
                     </div>
                     <ul class="notification-list" id="notification-list">
-                        <?php foreach ($notifications as $note): ?>
-                            <li class="notification-item <?= $note['read'] ? '' : 'is-unread' ?>" onclick="markRead(this)">
-                                <div class="icon-wrap"><i class="fas fa-bell"></i></div>
-                                <div class="details">
-                                    <p class="title"><?= htmlspecialchars($note['title']) ?></p>
-                                    <p class="message"><?= htmlspecialchars($note['message']) ?></p>
-                                </div>
-                                <span class="time"><?= htmlspecialchars($note['time']) ?></span>
-                                <?php if (!$note['read']): ?><span class="unread-dot"></span><?php endif; ?>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
+    <?php foreach ($notifications as $note): ?>
+        <li class="notification-item <?= isset($note['read']) && $note['read'] ? '' : 'is-unread' ?>" onclick="markRead(this)">
+            <div class="icon-wrap">
+                <i class="fas <?= $note['is_broadcast'] ? 'fa-bullhorn' : 'fa-bell' ?>"></i>
+            </div>
+            <div class="details">
+                <p class="title">
+                    <?= $note['title'] ?>
+                    <?php if ($note['is_broadcast']): ?>
+                        <span style="color: var(--accent-color); font-size: 0.8rem; margin-left: 0.5rem;">
+                            <i class="fas fa-globe"></i> Broadcast
+                        </span>
+                    <?php endif; ?>
+                </p>
+                <p class="message"><?= $note['message'] ?></p>
+            </div>
+         <span class="time">
+    <?php
+    if (isset($note['date_created'])) {
+        // Convert MySQL datetime to human-readable format
+        $timestamp = strtotime($note['date_created']);
+        $current_time = time();
+        $diff = $current_time - $timestamp;
+        
+        if ($diff < 60) {
+            echo 'Just now';
+        } elseif ($diff < 3600) {
+            echo floor($diff / 60) . ' mins ago';
+        } elseif ($diff < 86400) {
+            echo floor($diff / 3600) . ' hours ago';
+        } else {
+            echo date('M j, g:i A', $timestamp);
+        }
+    } else {
+        echo 'Recently';
+    }
+    ?>
+</span>
+        </li>
+    <?php endforeach; ?>
+</ul>
                 </div>
             </div>
         </main>
     </div>
-
     <script>
-    /* ---------------- Timer Functionality Only ---------------- */
-    let secondsWorked = 0;
-    let isClockedIn = <?php echo $isClockedIn ? 'true' : 'false'; ?>;
-    let clockInTime = null;
+        // Timer JS
+        let secondsWorked = 0;
+        let isClockedIn = false;
+        let clockInTime = null;
+        const timerDisplay = document.getElementById('timer-display');
+        const progressCircle = document.getElementById('progress-circle');
+        const clockButton = document.getElementById('clock-button');
+        const activityTableBody = document.getElementById('activity-table-body');
 
-    const timerDisplay = document.getElementById('timer-display');
-    const progressCircle = document.getElementById('progress-circle');
+        function updateTimer() {
+            const h = Math.floor(secondsWorked / 3600);
+            const m = Math.floor((secondsWorked % 3600) / 60);
+            const s = secondsWorked % 60;
+            timerDisplay.innerText = `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
 
-    /* Update timer display */
-    function updateTimer() {
-        const h = Math.floor(secondsWorked / 3600);
-        const m = Math.floor((secondsWorked % 3600) / 60);
-        const s = secondsWorked % 60;
-        timerDisplay.innerText = `${String(h).padStart(2,'0')}h ${String(m).padStart(2,'0')}m ${String(s).padStart(2,'0')}s`;
+            const circumference = 2 * Math.PI * 125;
+            const totalSeconds = 8 * 3600;
+            const progress = Math.min((secondsWorked / totalSeconds) * circumference, circumference);
+            progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
+            progressCircle.style.strokeDashoffset = circumference - progress;
 
-        const circumference = 2 * Math.PI * 125;
-        const totalSeconds = 8 * 3600;
-        const progress = Math.min((secondsWorked / totalSeconds) * circumference, circumference);
-        progressCircle.style.strokeDasharray = `${circumference} ${circumference}`;
-        progressCircle.style.strokeDashoffset = circumference - progress;
+            if (isClockedIn) {
+                secondsWorked++;
+            }
+        }
 
-        if (isClockedIn) secondsWorked++;
-    }
+        // Clock in/out functionality
+        clockButton.addEventListener('click', function () {
+            if (!isClockedIn) {
+                // Clock in
+                isClockedIn = true;
+                clockInTime = new Date();
+                clockButton.textContent = 'Clock Out';
+                clockButton.classList.add('clocked-in');
 
-    /* Utility functions for notifications */
-    function formatTime(date) {
-        const h = String(date.getHours()).padStart(2,'0');
-        const m = String(date.getMinutes()).padStart(2,'0');
-        return `${h}:${m}`;
-    }
+                // Update today's row in the table
+                updateTodayRow(clockInTime);
 
-    function calculateHours(clockIn, clockOut) {
-        const diff = (clockOut - clockIn) / 3600000;
-        return `${diff.toFixed(1)}h`;
-    }
+                // Add notification
+                addNotification('Clock-In Successful', `You clocked in successfully at ${formatTime(clockInTime)}. Have a productive day!`);
 
-    /* Notifications */
-    function addNotification(title, message) {
-        const list = document.getElementById('notification-list');
-        const item = document.createElement('li');
-        item.className = 'notification-item is-unread';
-        item.onclick = function() { markRead(this); };
-        item.innerHTML = `
-            <div class="icon-wrap"><i class="fas fa-bell"></i></div>
-            <div class="details">
-                <p class="title">${title}</p>
-                <p class="message">${message}</p>
-            </div>
-            <span class="time">Just now</span>
-            <span class="unread-dot"></span>`;
-        list.prepend(item);
-    }
+            } else {
+                // Clock out
+                isClockedIn = false;
+                clockButton.textContent = 'Clock In';
+                clockButton.classList.remove('clocked-in');
 
-    function markRead(el) {
-        el.classList.remove('is-unread');
-        const dot = el.querySelector('.unread-dot');
-        if (dot) dot.remove();
-    }
+                // Reset the timer
+                secondsWorked = 0;
+                updateTimer();
 
-    function showTab(tab) { 
-        console.log('Tab clicked:', tab); 
-    }
+                const clockOutTime = new Date();
 
-    /* Start timer */
-    setInterval(updateTimer, 1000);
-    
+                // Update today's row with clock out time
+                updateTodayRow(clockInTime, clockOutTime);
+
+                // Add notification
+                addNotification('Clock-Out Successful', `You clocked out successfully at ${formatTime(clockOutTime)}. See you tomorrow!`);
+            }
+        });
+
+        function updateTodayRow(clockIn, clockOut = null) {
+            const today = new Date();
+            const todayFormatted = formatDate(today);
+
+            // Find today's row or create a new one
+            let todayRow = null;
+            const rows = activityTableBody.getElementsByTagName('tr');
+
+            for (let row of rows) {
+                if (row.cells[0].textContent === todayFormatted) {
+                    todayRow = row;
+                    break;
+                }
+            }
+
+            if (!todayRow) {
+                // Create a new row for today
+                todayRow = document.createElement('tr');
+                todayRow.className = 'today-row';
+
+                const dateCell = document.createElement('td');
+                dateCell.textContent = todayFormatted;
+
+                const dayCell = document.createElement('td');
+                dayCell.textContent = getDayName(today);
+
+                const clockInCell = document.createElement('td');
+                clockInCell.textContent = formatTime(clockIn);
+
+                const clockOutCell = document.createElement('td');
+                clockOutCell.textContent = clockOut ? formatTime(clockOut) : '';
+
+                const hoursCell = document.createElement('td');
+                hoursCell.textContent = clockOut ? calculateHours(clockIn, clockOut) : '';
+
+                todayRow.appendChild(dateCell);
+                todayRow.appendChild(dayCell);
+                todayRow.appendChild(clockInCell);
+                todayRow.appendChild(clockOutCell);
+                todayRow.appendChild(hoursCell);
+
+                // Insert at the top of the table
+                activityTableBody.insertBefore(todayRow, activityTableBody.firstChild);
+            } else {
+                // Update existing row
+                if (clockOut) {
+                    todayRow.cells[3].textContent = formatTime(clockOut);
+                    todayRow.cells[4].textContent = calculateHours(clockIn, clockOut);
+                } else {
+                    todayRow.cells[2].textContent = formatTime(clockIn);
+                }
+            }
+        }
+
+        function formatDate(date) {
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${month}/${day}/${year}`;
+        }
+
+        function formatTime(date) {
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
+        }
+
+        function getDayName(date) {
+            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            return days[date.getDay()];
+        }
+
+        function calculateHours(clockIn, clockOut) {
+            const diffMs = clockOut - clockIn;
+            const diffHrs = diffMs / (1000 * 60 * 60);
+            return `${diffHrs.toFixed(1)}h`;
+        }
+
+        function addNotification(title, message) {
+            const notificationList = document.getElementById('notification-list');
+            const now = new Date();
+            const timeString = formatNotificationTime(now);
+
+            const notificationItem = document.createElement('li');
+            notificationItem.className = 'notification-item is-unread';
+            notificationItem.onclick = function () { markRead(this); };
+
+            notificationItem.innerHTML = `
+                <div class="icon-wrap"><i class="fas fa-bell"></i></div>
+                <div class="details">
+                    <p class="title">${title}</p>
+                    <p class="message">${message}</p>
+                </div>
+                <span class="time">${timeString}</span>
+                <span class="unread-dot"></span>
+            `;
+
+            // Add to the top of the list
+            notificationList.insertBefore(notificationItem, notificationList.firstChild);
+        }
+
+        function formatNotificationTime(date) {
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / (1000 * 60));
+
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins} mins a 
+                
+            go`;
+
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours} hour(s) ago`;
+
+            return 'Yesterday';
+        }
+
+        // Notification click
+        function markRead(el) {
+            el.classList.remove('is-unread');
+            const dot = el.querySelector('.unread-dot');
+            if (dot) dot.remove();
+        }
+
+        // Tabs functionality
+        function showTab(tab) {
+            console.log('Tab clicked:', tab);
+        }
+
+        // Start the timer
+        setInterval(updateTimer, 1000);
     </script>
 </body>
+
 </html>
