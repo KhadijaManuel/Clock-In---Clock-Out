@@ -53,7 +53,7 @@ define('DB_NAME', getenv('DB_NAME') ?: 'tracker_db');
 // Application Settings
 // ------------------------
 define('APP_NAME', getenv('APP_NAME') ?: 'Clock It - Attendance Tracker');
-define('BASE_URL', getenv('BASE_URL') ?: '/attendance_dashboard/public');
+define('BASE_URL', getenv('BASE_URL') ?: '/Clock-In---Clock-Out/public');
 
 // ------------------------
 // Timezone
