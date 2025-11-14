@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . '/../includes/config.php';
+require_once __DIR__ . '/../includes/db.php';
 
 // Redirect if not logged in
 if (!isset($_SESSION['employee_id'])) {
@@ -34,12 +34,13 @@ require_once __DIR__ . '/../includes/header.php';
 require_once __DIR__ . '/../controllers/AttendanceController.php';
 require_once __DIR__ . '/../controllers/notificationController.php';
 
-// Check if employee is currently clocked in
+// Check if employee is currently clocked in - FIXED DATABASE CONNECTION
 $isClockedIn = false;
 try {
-    $db = Database::getInstance()->getConnection();
+    $db = Database::getInstance();
+    $conn = $db->getConnection(); // Get the mysqli connection
     $today = date('Y-m-d');
-    $stmt = $db->prepare("SELECT record_id FROM record_backups WHERE employee_id = ? AND date = ? AND clockout_time IS NULL");
+    $stmt = $conn->prepare("SELECT record_id FROM record_backups WHERE employee_id = ? AND date = ? AND clockout_time IS NULL");
     $stmt->bind_param("is", $employee_id, $today);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -50,7 +51,7 @@ try {
 }
 
 // Fetch notifications from backend API
-$apiUrl = "http://localhost/php-notif/public/api/index.php?employee_id=" . $employee_id;
+$apiUrl = "http://localhost/php-notif/public/api/index.php/notifications/getNotifications?employee_id=" . $employee_id;
 $response = @file_get_contents($apiUrl);
 if ($response === FALSE) {
     $notifications = [];
@@ -62,9 +63,10 @@ if ($response === FALSE) {
 // Weekly activities
 $weeklyActivities = AttendanceController::getWeeklyReport($employee_id);
 
-// Check dark mode from cookie (same as header.php)
-$isDarkMode = isset($_COOKIE['dark_mode']) ? $_COOKIE['dark_mode'] === 'true' : false;
+// Check dark mode from localStorage
+$isDarkMode = false;
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -87,8 +89,8 @@ $isDarkMode = isset($_COOKIE['dark_mode']) ? $_COOKIE['dark_mode'] === 'true' : 
             --border-color: rgba(6, 195, 167, 0.3);
             --bg-card: #FFFFFF;
         }
-        /* Dark Mode - Matching header.php */
-        body.dark-mode {
+        /* Dark Mode - Matching login.php */
+        [data-theme="dark"] {
             --header-bg: #243238;
             --button-text: #EBFFFD;
             --bg-color: #1F292E;
@@ -207,7 +209,6 @@ $isDarkMode = isset($_COOKIE['dark_mode']) ? $_COOKIE['dark_mode'] === 'true' : 
             line-height: 1.3;
             position: relative;
         }
-
         /* Clock button styles */
         .clock-button {
             background-color: var(--accent-color);
@@ -317,30 +318,6 @@ $isDarkMode = isset($_COOKIE['dark_mode']) ? $_COOKIE['dark_mode'] === 'true' : 
             border-radius: 2px;
             margin-top: 12px;
         }
-        .tabs {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        .tabs button {
-            background: transparent;
-            border: none;
-            padding: 6px 0;
-            font-size: 1rem;
-            color: var(--accent-color);
-            cursor: pointer;
-            position: relative;
-        }
-        .tabs button.active::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            right: 0;
-            height: 3px;
-            border-radius: 2px;
-            background-color: var(--accent-color);
-        }
         .notification-list {
             list-style: none;
             padding: 0;
@@ -387,51 +364,43 @@ $isDarkMode = isset($_COOKIE['dark_mode']) ? $_COOKIE['dark_mode'] === 'true' : 
             font-size: 0.8rem;
             color: var(--subtext-color);
         }
-        .unread-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: #FF5C5C;
-        }
         .empty {
             text-align: center;
             margin-top: 10px;
             color: var(--subtext-color);
         }
         
-        /* Message styles */
+        /* Message styles - MOVED CLOSER TO LEFT */
         .message {
-        padding: 1px;
-        border-radius: 6px;
-        margin-bottom: 10px;
-        margin-left: 0; /* Changed from 1rem to 0 */
-        margin-right: 1rem;
-        margin-top: 0.5; /* Added some top margin for better spacing */
-    }
+            padding: 0px;
+            border-radius: 6px;
+            margin-bottom: .5rem;
+            margin-left: 0; /* Changed from 1rem to 0 */
+            margin-right: 0;
+            margin-top: .5rem;
+        }
         .message.success { 
             background: #d4edda; 
             color: #155724; 
             border: 1px solid #c3e6cb;
-            margin-top: 5px;
-            margin-bottom: 5px;
             text-align: center;
+            font-weight: 600;
         }
         .message.error { 
             background: #f8d7da; 
             color: #721c24; 
             border: 1px solid #f5c6cb;
-            margin-top: 5px;
-            margin-bottom: 5px;
             text-align: center;
+            font-weight: 600;
         }
         
         /* Dark mode specific message styles */
-        body.dark-mode .message.success { 
+        [data-theme="dark"] .message.success { 
             background: #1e3a2a; 
             color: #4ade80; 
             border: 1px solid #166534;
         }
-        body.dark-mode .message.error { 
+        [data-theme="dark"] .message.error { 
             background: #3a1e1e; 
             color: #f87171; 
             border: 1px solid #7f1d1d;
@@ -448,14 +417,20 @@ $isDarkMode = isset($_COOKIE['dark_mode']) ? $_COOKIE['dark_mode'] === 'true' : 
             .notification-panel {
                 padding: 1rem;
             }
+            .floating-dot {
+                width: 10px;
+                height: 10px;
+                top: -6px;
+                right: -6px;
+            }
         }
     </style>
 </head>
-<body class="<?php echo $isDarkMode ? 'dark-mode' : ''; ?>">
+<body>
     <div class="attendance-dashboard">
         <h1>Attendance</h1>
 
-        <!-- Flash messages -->
+        <!-- Flash messages - NOW CLOSER TO LEFT -->
         <?php if (isset($_SESSION['message'])): ?>
             <div class="message <?= $_SESSION['message_type'] === 'success' ? 'success' : 'error'; ?>">
                 <?= htmlspecialchars($_SESSION['message']); unset($_SESSION['message'], $_SESSION['message_type']); ?>
@@ -599,22 +574,12 @@ $isDarkMode = isset($_COOKIE['dark_mode']) ? $_COOKIE['dark_mode'] === 'true' : 
             // Here you would typically make an API call to mark as read
         }
 
-        // Listen for dark mode changes from header
+        // Theme detection from localStorage (same as login.php)
         document.addEventListener('DOMContentLoaded', function() {
-            // Observe body class changes for dark mode
-            const observer = new MutationObserver(function(mutations) {
-                mutations.forEach(function(mutation) {
-                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-                        // Dark mode was toggled in header, our CSS variables will automatically update
-                        console.log('Dark mode toggled via header');
-                    }
-                });
-            });
-            
-            observer.observe(document.body, {
-                attributes: true,
-                attributeFilter: ['class']
-            });
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+            }
         });
     </script>
 </body>
